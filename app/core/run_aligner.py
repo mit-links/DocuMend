@@ -1,12 +1,14 @@
 """Run formatting preservation and sequence-matching diff engine for python-docx.
 
-Ensures that inline formatting (bold, italic, underline, fonts, colors)
-is preserved even when text is corrected by the LLM.
+Ensures that inline formatting (bold, italic, underline, fonts, colors, sub/superscript)
+is preserved even when text is modified by LLM corrections.
 """
 
 from dataclasses import dataclass
 import difflib
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
+import docx.text.paragraph
+import docx.text.run
 from docx.shared import RGBColor
 
 
@@ -20,43 +22,55 @@ class RunStyle:
     font_name: Optional[str] = None
     font_size: Optional[Any] = None
     color_rgb: Optional[str] = None
+    theme_color: Optional[Any] = None
     highlight_color: Optional[Any] = None
     style_name: Optional[str] = None
+    subscript: Optional[bool] = None
+    superscript: Optional[bool] = None
+    strike: Optional[bool] = None
 
 
-def extract_run_style(run) -> RunStyle:
-    """Extract styling attributes from a python-docx Run object."""
-    color_str = None
-    try:
-        if run.font.color and run.font.color.rgb:
-            color_str = str(run.font.color.rgb)
-    except Exception:
-        pass
+def _safe_get(obj: Any, *attrs: str, default: Any = None) -> Any:
+    """Safely retrieves nested attributes without raising exceptions.
 
-    highlight = None
-    try:
-        highlight = run.font.highlight_color
-    except Exception:
-        pass
+    Args:
+        obj: Root object to inspect.
+        *attrs: Attribute sequence to traverse.
+        default: Fallback value if any attribute is missing or raises AttributeError.
 
-    style_name = None
-    try:
-        if run.style and run.style.name:
-            style_name = run.style.name
-    except Exception:
-        pass
+    Returns:
+        The resolved attribute value, or default.
+    """
+    curr = obj
+    for attr in attrs:
+        try:
+            curr = getattr(curr, attr, None)
+            if curr is None:
+                return default
+        except (AttributeError, ValueError, TypeError):
+            return default
+    return curr
 
-    font_name = None
-    try:
-        font_name = run.font.name
-    except Exception:
-        pass
 
-    font_size = None
-    try:
-        font_size = run.font.size
-    except Exception:
-        pass
+def extract_run_style(run: docx.text.run.Run) -> RunStyle:
+    """Extract styling attributes from a python-docx Run object.
+
+    Args:
+        run: The Word Run element to extract formatting from.
+
+    Returns:
+        RunStyle snapshot containing font, weight, decorations, and colors.
+    """
+    rgb = _safe_get(run, "font", "color", "rgb")
+    color_str = str(rgb) if rgb is not None else None
+    theme_color = _safe_get(run, "font", "color", "theme_color")
+    highlight = _safe_get(run, "font", "highlight_color")
+    style_name = _safe_get(run, "style", "name")
+    font_name = _safe_get(run, "font", "name")
+    font_size = _safe_get(run, "font", "size")
+    subscript = _safe_get(run, "font", "subscript")
+    superscript = _safe_get(run, "font", "superscript")
+    strike = _safe_get(run, "font", "strike")
 
     return RunStyle(
         bold=run.bold,
@@ -65,13 +79,22 @@ def extract_run_style(run) -> RunStyle:
         font_name=font_name,
         font_size=font_size,
         color_rgb=color_str,
+        theme_color=theme_color,
         highlight_color=highlight,
         style_name=style_name,
+        subscript=subscript,
+        superscript=superscript,
+        strike=strike,
     )
 
 
-def apply_run_style(run, style: RunStyle) -> None:
-    """Apply a RunStyle back onto a python-docx Run object."""
+def apply_run_style(run: docx.text.run.Run, style: RunStyle) -> None:
+    """Apply a RunStyle back onto a python-docx Run object.
+
+    Args:
+        run: The target Word Run element to style.
+        style: The RunStyle attributes to apply.
+    """
     if style.bold is not None:
         run.bold = style.bold
     if style.italic is not None:
@@ -85,82 +108,96 @@ def apply_run_style(run, style: RunStyle) -> None:
     if style.color_rgb is not None:
         try:
             run.font.color.rgb = RGBColor.from_string(style.color_rgb)
-        except Exception:
+        except (ValueError, AttributeError):
+            pass
+    if style.theme_color is not None:
+        try:
+            run.font.color.theme_color = style.theme_color
+        except (ValueError, AttributeError):
             pass
     if style.highlight_color is not None:
         try:
             run.font.highlight_color = style.highlight_color
-        except Exception:
+        except (ValueError, AttributeError):
             pass
     if style.style_name is not None:
         try:
             run.style = style.style_name
-        except Exception:
+        except (ValueError, AttributeError, KeyError):
             pass
+    if style.subscript is not None:
+        run.font.subscript = style.subscript
+    if style.superscript is not None:
+        run.font.superscript = style.superscript
+    if style.strike is not None:
+        run.font.strike = style.strike
 
 
 def align_and_reconstruct_runs(
-    original_runs_data: List[Tuple[str, RunStyle]],
+    original_runs_data: list[tuple[str, RunStyle]],
     corrected_text: str,
-) -> List[Tuple[str, RunStyle]]:
+) -> list[tuple[str, RunStyle]]:
     """Map corrections to original runs using difflib sequence matching.
 
-    Returns a list of (text_chunk, RunStyle) to be recreated in the paragraph.
+    Args:
+        original_runs_data: List of (run_text, RunStyle) tuples from original paragraph.
+        corrected_text: Full corrected text string for the paragraph.
+
+    Returns:
+        List of (text_chunk, RunStyle) chunks to recreate in the paragraph.
     """
     original_text = "".join(text for text, _ in original_runs_data)
 
-    # If text is unchanged or corrected text is identical, return original structure
+    # Fast path: text is unchanged
     if original_text == corrected_text:
         return original_runs_data
 
-    # If there were no runs, or original was empty
+    # Edge cases: no runs or empty original text
     if not original_runs_data or not original_text:
         default_style = original_runs_data[0][1] if original_runs_data else RunStyle()
         return [(corrected_text, default_style)]
 
-    # If all runs had the exact same style, we can just return one run with that style
+    # Fast path: all runs had identical style
     first_style = original_runs_data[0][1]
-    all_same_style = all(style == first_style for _, style in original_runs_data)
-    if all_same_style:
+    if all(style == first_style for _, style in original_runs_data):
         return [(corrected_text, first_style)]
 
-    # Map each character in original_text to its RunStyle
-    char_styles: List[RunStyle] = []
+    # Map each character index in original_text to its corresponding RunStyle
+    char_styles: list[RunStyle] = []
     for text, style in original_runs_data:
         char_styles.extend([style] * len(text))
 
-    # Use SequenceMatcher to find aligned blocks
+    # Use difflib.SequenceMatcher to calculate optimal block alignments
     matcher = difflib.SequenceMatcher(None, original_text, corrected_text)
-    corrected_char_styles: List[RunStyle] = [RunStyle()] * len(corrected_text)
+    corrected_char_styles: list[RunStyle] = [RunStyle()] * len(corrected_text)
 
-    for tag, alo, ahi, blo, bhi in matcher.get_opcodes():
+    for tag, orig_start, orig_end, corr_start, corr_end in matcher.get_opcodes():
         if tag == "equal":
-            for i in range(bhi - blo):
-                corrected_char_styles[blo + i] = char_styles[alo + i]
+            for i in range(corr_end - corr_start):
+                corrected_char_styles[corr_start + i] = char_styles[orig_start + i]
         elif tag == "replace":
-            # Map replacement characters to the replaced original span
-            orig_len = max(ahi - alo, 1)
-            repl_len = bhi - blo
+            # Map replacement characters proportionally to the replaced original span
+            orig_len = max(orig_end - orig_start, 1)
+            repl_len = corr_end - corr_start
             for i in range(repl_len):
                 orig_offset = min(int((i / repl_len) * orig_len), orig_len - 1)
-                corrected_char_styles[blo + i] = char_styles[alo + orig_offset]
+                corrected_char_styles[corr_start + i] = char_styles[orig_start + orig_offset]
         elif tag == "insert":
-            # Inherit style from preceding character, or following if at start
-            if alo > 0 and alo - 1 < len(char_styles):
-                inherited_style = char_styles[alo - 1]
-            elif alo < len(char_styles):
-                inherited_style = char_styles[alo]
+            # Inherit style from preceding character; if inserted at index 0, take following
+            if orig_start > 0 and orig_start - 1 < len(char_styles):
+                inherited_style = char_styles[orig_start - 1]
+            elif orig_start < len(char_styles):
+                inherited_style = char_styles[orig_start]
             else:
                 inherited_style = char_styles[-1] if char_styles else RunStyle()
 
-            for i in range(bhi - blo):
-                corrected_char_styles[blo + i] = inherited_style
+            for i in range(corr_end - corr_start):
+                corrected_char_styles[corr_start + i] = inherited_style
         elif tag == "delete":
-            # Nothing to add for deleted characters
             pass
 
-    # Group consecutive characters with identical RunStyle into chunks
-    chunks: List[Tuple[str, RunStyle]] = []
+    # Group consecutive characters sharing identical styling into cohesive run chunks
+    chunks: list[tuple[str, RunStyle]] = []
     if not corrected_char_styles:
         return chunks
 
@@ -181,10 +218,18 @@ def align_and_reconstruct_runs(
     return chunks
 
 
-def update_paragraph_with_corrected_text(paragraph, corrected_text: str) -> bool:
+def update_paragraph_with_corrected_text(
+    paragraph: docx.text.paragraph.Paragraph,
+    corrected_text: str,
+) -> bool:
     """Update a Word paragraph with corrected text, preserving run formatting.
 
-    Returns True if paragraph was modified, False otherwise.
+    Args:
+        paragraph: The python-docx Paragraph element to update.
+        corrected_text: The new sanitized text to apply.
+
+    Returns:
+        True if the paragraph was modified, False otherwise.
     """
     if not paragraph.runs:
         if paragraph.text != corrected_text:
@@ -196,15 +241,22 @@ def update_paragraph_with_corrected_text(paragraph, corrected_text: str) -> bool
     if original_text == corrected_text:
         return False
 
+    # Fast path: single-run paragraph preserves all run and paragraph properties directly
+    if len(paragraph.runs) == 1:
+        paragraph.runs[0].text = corrected_text
+        return True
+
     original_runs_data = [(r.text, extract_run_style(r)) for r in paragraph.runs]
     new_chunks = align_and_reconstruct_runs(original_runs_data, corrected_text)
 
-    # Clear existing runs without resetting paragraph properties
-    paragraph.text = ""
+    # Remove only w:r child elements without clearing non-run elements (hyperlinks, drawings)
+    for r_elem in list(paragraph._p.xpath("./w:r")):
+        paragraph._p.remove(r_elem)
 
     # Re-add runs with aligned styling
     for chunk_text, style in new_chunks:
-        run = paragraph.add_run(chunk_text)
-        apply_run_style(run, style)
+        if chunk_text:
+            run = paragraph.add_run(chunk_text)
+            apply_run_style(run, style)
 
     return True

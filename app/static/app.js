@@ -298,6 +298,7 @@ fileInput.addEventListener("change", (e) => {
   if (e.target.files.length > 0) {
     handleFile(e.target.files[0]);
   }
+  e.target.value = "";
 });
 
 function handleFile(file) {
@@ -585,8 +586,38 @@ function connectSSE(streamUrl) {
     }
   };
 
-  activeEventSource.onerror = (err) => {
-    console.warn("SSE connection error", err);
+  activeEventSource.onerror = async (err) => {
+    console.warn("SSE connection error or closed:", err);
+    if (currentJobId && activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+      try {
+        const res = await fetch(`/api/jobs/${currentJobId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === "failed") {
+            const errorBanner = document.getElementById("errorBanner");
+            const errorBannerText = document.getElementById("errorBannerText");
+            if (errorBanner && errorBannerText) {
+              errorBannerText.textContent = data.error_message || "An error occurred during processing.";
+              errorBanner.classList.remove("hidden");
+            }
+            progressStatus.textContent = "Failed";
+            progressSpinner.className = "fa-solid fa-circle-xmark text-rose-600";
+            progressTitle.textContent = "Processing Stopped due to Error";
+            progressBar.className = "bg-rose-500 h-3 rounded-full transition-all duration-300";
+            if (stopBtn) stopBtn.classList.add("hidden");
+            startBtn.disabled = false;
+          } else if (data.status === "completed" || data.status === "cancelled") {
+            startBtn.disabled = false;
+            if (stopBtn) stopBtn.classList.add("hidden");
+          }
+        }
+      } catch (pollErr) {
+        console.error("Failed to query fallback job status after SSE disconnect:", pollErr);
+        startBtn.disabled = false;
+      }
+    }
   };
 }
 
@@ -595,6 +626,7 @@ async function stopProcessing() {
   if (!currentJobId) return;
 
   const stopBtn = document.getElementById("stopProcessBtn");
+  const startBtn = document.getElementById("startProcessBtn");
   const progressStatus = document.getElementById("progressStatus");
   const currentSnippetText = document.getElementById("currentSnippetText");
 
@@ -617,6 +649,13 @@ async function stopProcessing() {
     console.info("Job cancellation result:", data);
   } catch (err) {
     console.error("Failed to cancel job:", err);
+    if (stopBtn) {
+      stopBtn.disabled = false;
+      stopBtn.innerHTML = '<i class="fa-solid fa-stop text-xs"></i><span>Stop Processing</span>';
+    }
+    if (startBtn) {
+      startBtn.disabled = false;
+    }
   }
 }
 

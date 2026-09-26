@@ -1,9 +1,13 @@
+"""DOCX document parsing, batching, and text replacement engine."""
+
 import asyncio
+from dataclasses import dataclass
 import io
 import logging
 import time
-from typing import Callable, Dict, List, Optional, Tuple, Any
+from typing import Any, Callable, Optional
 import docx
+import docx.text.paragraph
 
 from app.core.llm_client import LLMClient
 from app.core.run_aligner import update_paragraph_with_corrected_text
@@ -11,50 +15,91 @@ from app.core.run_aligner import update_paragraph_with_corrected_text
 logger = logging.getLogger(__name__)
 
 
-class DocxProcessor:
-    """Handles parsing, batching, and updating of DOCX documents."""
+@dataclass(frozen=True)
+class DocumentElement:
+    """Represents a processable text unit extracted from a DOCX file."""
 
-    def __init__(self, llm_client: LLMClient, concurrency_limit: int = 2):
+    element_type: str  # "paragraph" or "table_cell"
+    paragraph: docx.text.paragraph.Paragraph
+    original_text: str
+
+    @property
+    def word_count(self) -> int:
+        """Returns the word count of the element."""
+        return len(self.original_text.split())
+
+
+class DocxProcessor:
+    """Handles parsing, batching, LLM correction, and in-place updating of DOCX documents."""
+
+    def __init__(self, llm_client: LLMClient, concurrency_limit: int = 2) -> None:
+        """Initializes the DocxProcessor.
+
+        Args:
+            llm_client: The LLM client used for text corrections.
+            concurrency_limit: Maximum number of concurrent LLM requests.
+        """
         self.llm_client = llm_client
         self.concurrency_limit = concurrency_limit
         self.semaphore = asyncio.Semaphore(concurrency_limit)
 
-    def extract_processable_paragraphs(self, doc: docx.Document) -> List[Tuple[str, docx.text.paragraph.Paragraph]]:
-        """Extract all non-empty paragraphs from document body and tables.
+    def extract_processable_paragraphs(self, doc: docx.Document) -> list[DocumentElement]:
+        """Extracts all non-empty paragraphs from document body and tables.
 
-        Returns a list of (element_type, paragraph_object).
+        Table cells are deduplicated by underlying OpenXML element to avoid duplicate
+        processing of merged cells.
+
+        Args:
+            doc: The python-docx Document object.
+
+        Returns:
+            List of DocumentElement instances to process.
         """
-        items = []
+        elements: list[DocumentElement] = []
 
         # 1. Body paragraphs
         for p in doc.paragraphs:
-            if p.text and p.text.strip():
-                items.append(("paragraph", p))
+            text = p.text
+            if text and text.strip():
+                elements.append(DocumentElement("paragraph", p, text))
 
-        # 2. Table cells
+        # 2. Table cells (deduplicating merged cells by XML node pointer _tc)
+        visited_tcs = set()
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
+                    if cell._tc in visited_tcs:
+                        continue
+                    visited_tcs.add(cell._tc)
                     for p in cell.paragraphs:
-                        if p.text and p.text.strip():
-                            items.append(("table_cell", p))
+                        text = p.text
+                        if text and text.strip():
+                            elements.append(DocumentElement("table_cell", p, text))
 
-        return items
+        return elements
 
     def chunk_items_into_batches(
         self,
-        items: List[Tuple[str, docx.text.paragraph.Paragraph]],
+        elements: list[DocumentElement],
         max_batch_size: int = 6,
         max_batch_words: int = 250,
-    ) -> List[List[Tuple[str, docx.text.paragraph.Paragraph]]]:
-        """Group consecutive processable items into small batches by count and word limit."""
-        batches = []
-        current_batch = []
+    ) -> list[list[DocumentElement]]:
+        """Groups consecutive processable elements into batches by count and word limit.
+
+        Args:
+            elements: List of DocumentElement items to group.
+            max_batch_size: Maximum number of items in a single batch.
+            max_batch_words: Maximum aggregate words in a single batch.
+
+        Returns:
+            List of element batches.
+        """
+        batches: list[list[DocumentElement]] = []
+        current_batch: list[DocumentElement] = []
         current_words = 0
 
-        for item in items:
-            item_type, p = item
-            words = len(p.text.split())
+        for elem in elements:
+            words = elem.word_count
             if current_batch and (
                 len(current_batch) >= max_batch_size
                 or (current_words + words > max_batch_words and current_words > 0)
@@ -63,7 +108,7 @@ class DocxProcessor:
                 current_batch = []
                 current_words = 0
 
-            current_batch.append(item)
+            current_batch.append(elem)
             current_words += words
 
         if current_batch:
@@ -77,17 +122,31 @@ class DocxProcessor:
         model_override: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int, str, bool], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
-    ) -> Tuple[bytes, Dict[str, Any]]:
-        """Process a DOCX document in-place and return (updated_bytes, stats_dict)."""
+    ) -> tuple[bytes, dict[str, Any]]:
+        """Processes a DOCX document in-place and returns updated bytes with statistics.
+
+        Args:
+            docx_bytes: Raw binary content of the source .docx document.
+            model_override: Optional model name to override the default client model.
+            progress_callback: Optional callback invoked with (processed, total, snippet, done).
+            cancel_check: Optional callable returning True if processing was requested to stop.
+
+        Returns:
+            Tuple of (reconstructed_docx_bytes, metrics_dict).
+
+        Raises:
+            asyncio.CancelledError: If processing was cancelled.
+            RuntimeError: If an unrecoverable LLM or processing error occurred.
+        """
         start_time = time.time()
         input_stream = io.BytesIO(docx_bytes)
         doc = docx.Document(input_stream)
 
-        processable = self.extract_processable_paragraphs(doc)
-        total_count = len(processable)
-        body_count = sum(1 for t, _ in processable if t == "paragraph")
-        table_count = sum(1 for t, _ in processable if t == "table_cell")
-        total_words = sum(len(p.text.split()) for _, p in processable)
+        elements = self.extract_processable_paragraphs(doc)
+        total_count = len(elements)
+        body_count = sum(1 for e in elements if e.element_type == "paragraph")
+        table_count = sum(1 for e in elements if e.element_type == "table_cell")
+        total_words = sum(e.word_count for e in elements)
 
         logger.info(
             f"Extracted {total_count} processable elements ({total_words} words) from DOCX: "
@@ -108,7 +167,7 @@ class DocxProcessor:
                 progress_callback(0, 0, "No text found to process", True)
             return docx_bytes, empty_stats
 
-        batches = self.chunk_items_into_batches(processable, max_batch_size=6, max_batch_words=250)
+        batches = self.chunk_items_into_batches(elements, max_batch_size=6, max_batch_words=250)
         logger.info(f"Grouped {total_count} elements into {len(batches)} batch(es) for processing.")
 
         processed_count = 0
@@ -117,66 +176,76 @@ class DocxProcessor:
 
         stop_processing_event = asyncio.Event()
 
-        async def process_single_paragraph(item_type: str, p: docx.text.paragraph.Paragraph):
+        def is_cancelled() -> bool:
+            return stop_processing_event.is_set() or bool(cancel_check and cancel_check())
+
+        async def _execute_single_paragraph(p: docx.text.paragraph.Paragraph) -> None:
+            """Executes paragraph correction directly without acquiring semaphore.
+
+            Assumes caller manages concurrency semaphore.
+            """
             nonlocal processed_count, total_completion_tokens, total_gen_time
-            if stop_processing_event.is_set() or (cancel_check and cancel_check()):
+            if is_cancelled():
                 return
 
             original_text = p.text
             snippet = (original_text[:60] + "...") if len(original_text) > 60 else original_text
+            call_start = time.time()
 
-            async with self.semaphore:
-                if stop_processing_event.is_set() or (cancel_check and cancel_check()):
+            try:
+                res = await self.llm_client.correct_text(
+                    original_text, model_override=model_override
+                )
+                if is_cancelled():
                     return
 
-                call_start = time.time()
-                try:
-                    res = await self.llm_client.correct_text(original_text, model_override=model_override)
-                    if stop_processing_event.is_set() or (cancel_check and cancel_check()):
-                        return
+                corrected_text = str(res)
+                tokens = getattr(res, "completion_tokens", None)
+                dur = getattr(res, "duration", time.time() - call_start)
 
-                    corrected_text = str(res)
-                    tokens = getattr(res, "completion_tokens", None)
-                    dur = getattr(res, "duration", time.time() - call_start)
+                if tokens is not None:
+                    total_completion_tokens += tokens
+                total_gen_time += dur
 
-                    if tokens is not None:
-                        total_completion_tokens += tokens
-                    total_gen_time += dur
+                update_paragraph_with_corrected_text(p, corrected_text)
+                processed_count += 1
+                if progress_callback:
+                    progress_callback(
+                        processed_count,
+                        total_count,
+                        snippet,
+                        processed_count >= total_count,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                stop_processing_event.set()
+                logger.error(f"Fatal error processing item snippet '{snippet}': {e}")
+                raise
 
-                    update_paragraph_with_corrected_text(p, corrected_text)
-                    processed_count += 1
-                    if progress_callback:
-                        progress_callback(
-                            processed_count,
-                            total_count,
-                            snippet,
-                            processed_count >= total_count,
-                        )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    stop_processing_event.set()
-                    if cancel_check and cancel_check():
-                        return
-                    logger.error(f"Fatal error processing item snippet '{snippet}': {e}")
-                    raise
+        async def process_single_paragraph(p: docx.text.paragraph.Paragraph) -> None:
+            """Wraps single paragraph execution in concurrency semaphore."""
+            if is_cancelled():
+                return
+            async with self.semaphore:
+                await _execute_single_paragraph(p)
 
-        async def process_batch(batch: List[Tuple[str, docx.text.paragraph.Paragraph]]):
+        async def process_batch(batch: list[DocumentElement]) -> None:
+            """Processes a batch of DocumentElement items."""
             nonlocal processed_count, total_completion_tokens, total_gen_time
-            if stop_processing_event.is_set() or (cancel_check and cancel_check()):
+            if is_cancelled():
                 return
 
             if len(batch) == 1:
-                item_type, p = batch[0]
-                await process_single_paragraph(item_type, p)
+                await process_single_paragraph(batch[0].paragraph)
                 return
 
-            texts = [p.text for _, p in batch]
+            texts = [e.original_text for e in batch]
             first_snippet = (texts[0][:50] + "...") if len(texts[0]) > 50 else texts[0]
             batch_desc = f"batch of {len(batch)} items: '{first_snippet}'"
 
             async with self.semaphore:
-                if stop_processing_event.is_set() or (cancel_check and cancel_check()):
+                if is_cancelled():
                     return
 
                 call_start = time.time()
@@ -187,7 +256,6 @@ class DocxProcessor:
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    # Model/server failure during batch: immediately halt pipeline
                     stop_processing_event.set()
                     logger.error(f"Fatal server failure during {batch_desc}: {e}")
                     raise
@@ -196,30 +264,36 @@ class DocxProcessor:
                     total_completion_tokens += tokens
                 total_gen_time += dur
 
-                if stop_processing_event.is_set() or (cancel_check and cancel_check()):
+                if is_cancelled():
                     return
 
                 if corrected_texts is not None and len(corrected_texts) == len(batch):
-                    for (_, p), corr in zip(batch, corrected_texts):
-                        update_paragraph_with_corrected_text(p, corr)
+                    for elem, corr in zip(batch, corrected_texts):
+                        update_paragraph_with_corrected_text(elem.paragraph, corr)
                         processed_count += 1
                         if progress_callback:
-                            snippet = (p.text[:60] + "...") if len(p.text) > 60 else p.text
+                            elem_snippet = (
+                                (elem.original_text[:60] + "...")
+                                if len(elem.original_text) > 60
+                                else elem.original_text
+                            )
                             progress_callback(
                                 processed_count,
                                 total_count,
-                                snippet,
+                                elem_snippet,
                                 processed_count >= total_count,
                             )
                 else:
-                    # Fallback to individual items only for formatting discrepancies
-                    logger.info(f"Batched formatting mismatch; falling back to individual items for {batch_desc}")
-                    for item_type, p in batch:
-                        if stop_processing_event.is_set() or (cancel_check and cancel_check()):
+                    # Formatting mismatch fallback: process items directly while holding semaphore!
+                    # BUG-01 FIX: Call _execute_single_paragraph directly to avoid semaphore deadlock.
+                    logger.info(
+                        f"Batched formatting mismatch; executing individual fallback for {batch_desc}"
+                    )
+                    for elem in batch:
+                        if is_cancelled():
                             return
-                        await process_single_paragraph(item_type, p)
+                        await _execute_single_paragraph(elem.paragraph)
 
-        # Process batches concurrently within semaphore bounds
         tasks = [asyncio.create_task(process_batch(b)) for b in batches]
         try:
             await asyncio.gather(*tasks)
@@ -245,7 +319,9 @@ class DocxProcessor:
             "total_words": total_words,
             "words_per_second": words_per_sec,
             "tokens_per_second": tokens_per_sec,
-            "total_completion_tokens": total_completion_tokens if total_completion_tokens > 0 else None,
+            "total_completion_tokens": (
+                total_completion_tokens if total_completion_tokens > 0 else None
+            ),
             "total_items": total_count,
         }
 
@@ -256,7 +332,6 @@ class DocxProcessor:
             + ")."
         )
 
-        # Save reconstructed document to memory buffer
         output_stream = io.BytesIO()
         doc.save(output_stream)
         output_stream.seek(0)
