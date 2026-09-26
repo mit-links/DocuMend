@@ -19,7 +19,7 @@ DocuMend guarantees **strict formatting preservation**: inline bold, italic, und
 - **Full Document Coverage:** Accurately corrects body paragraphs, bullet lists, and tables without altering document layouts.
 - **Multilingual Copyediting:** Focuses strictly on spelling, grammar, and punctuation while preserving the original language without translation.
 - **Fast & Responsive:** Parallel processing and dynamic batching accelerate throughput, with automatic GPU memory management for local runtimes.
-- **Privacy First:** Documents are processed in-memory with zero disk footprint, and remote API keys are never written to disk.
+- **Privacy First:** When paired with a local LLM runtime, no document data is sent anywhere outside of the machine. Files are processed strictly in-memory with zero disk footprint, console logs omit text excerpts, and API keys are never written to disk.
 
 ---
 
@@ -69,7 +69,9 @@ DocuMend includes built-in presets accessible directly from the UI header:
 | **ChatGPT (OpenAI)** | `https://api.openai.com/v1` | HTTPS | OpenAI API Key (`sk-...`) |
 | **Claude (Anthropic)** | `https://api.anthropic.com/v1` | HTTPS | Anthropic Console Key |
 
-Local endpoints (LM Studio, Ollama) require no external internet connection. Cloud providers require a valid API key; keys are held strictly in memory for the duration of the request and are never written to disk.
+Local endpoints (LM Studio, Ollama) require no external internet connection—**no document data is sent anywhere outside of your machine**. Uploaded documents are buffered and edited in RAM (up to 100 MB) with zero temporary files written to disk, server logs do not output text excerpts, and cross-origin browser requests are blocked.
+
+For cloud providers, requests are sent directly to the configured provider API; keys are held strictly in memory for the duration of the request and are never written to disk.
 
 ---
 
