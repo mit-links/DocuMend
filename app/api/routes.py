@@ -45,6 +45,34 @@ async def get_available_models(
         }
 
 
+@router.post("/models/eject")
+async def eject_inactive_models_endpoint(
+    base_url: Optional[str] = Form(None),
+    api_key: Optional[str] = Form(None),
+    active_model: Optional[str] = Form(None),
+):
+    """Attempt to eject/unload any inactive models on the server to free VRAM."""
+    target_url = base_url or settings.default_base_url
+    target_key = api_key or settings.default_api_key
+
+    client = LLMClient(base_url=target_url, api_key=target_key)
+    try:
+        ejected = await client.eject_inactive_models(active_model=active_model)
+        return {
+            "status": "ok",
+            "active_model": active_model,
+            "ejected": ejected,
+        }
+    except Exception as e:
+        logger.debug(f"Manual eject endpoint call ignored error: {e}")
+        return {
+            "status": "ignored",
+            "active_model": active_model,
+            "ejected": [],
+            "error": str(e),
+        }
+
+
 async def _run_document_job(
     job_id: str,
     file_bytes: bytes,
@@ -66,6 +94,17 @@ async def _run_document_job(
         api_key=api_key,
         model=model,
     )
+
+    # Attempt to eject inactive models to free VRAM for the active model (best-effort)
+    try:
+        ejected = await client.eject_inactive_models(active_model=model)
+        if ejected:
+            logger.info(
+                f"[Job {job_id}] Ejected {len(ejected)} inactive model(s) to free VRAM: {ejected}"
+            )
+    except Exception as e:
+        logger.debug(f"[Job {job_id}] Model ejection skipped or unsupported: {e}")
+
     processor = DocxProcessor(
         llm_client=client,
         concurrency_limit=effective_concurrency,

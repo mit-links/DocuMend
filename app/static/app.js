@@ -246,7 +246,25 @@ function checkCanStart() {
   startBtn.disabled = !(hasFile && hasModel && hasValidConcurrency);
 }
 
-document.getElementById("modelSelect").addEventListener("change", checkCanStart);
+document.getElementById("modelSelect").addEventListener("change", async () => {
+  checkCanStart();
+  const selectedModel = document.getElementById("modelSelect").value;
+  if (selectedModel) {
+    try {
+      const formData = new FormData();
+      formData.append("base_url", document.getElementById("serverUrl").value.trim());
+      formData.append("api_key", document.getElementById("apiKey").value.trim());
+      formData.append("active_model", selectedModel);
+      const res = await fetch("/api/models/eject", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.ejected && data.ejected.length > 0) {
+        console.info("Ejected inactive models to free VRAM:", data.ejected);
+      }
+    } catch (err) {
+      // Best-effort operation, ignore failures
+    }
+  }
+});
 document.getElementById("concurrencyInput").addEventListener("input", validateConcurrencyUI);
 document.getElementById("concurrencyInput").addEventListener("change", validateConcurrencyUI);
 

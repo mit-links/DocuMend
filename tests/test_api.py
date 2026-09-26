@@ -81,3 +81,18 @@ def test_process_invalid_concurrency(tmp_path):
     response = client.post("/api/process", files=files, data=data)
     assert response.status_code == 422
 
+
+def test_eject_models_endpoint():
+    # Eject endpoint is best-effort and always returns 200 with status ok or ignored
+    response = client.post(
+        "/api/models/eject",
+        data={
+            "base_url": "http://127.0.0.1:1234/v1",
+            "active_model": "qwen/qwen3.5-9b",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] in ("ok", "ignored")
+    assert isinstance(data["ejected"], list)
+
