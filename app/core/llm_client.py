@@ -404,8 +404,8 @@ class LLMClient:
         parsed = parse_batched_output(raw_content, expected_count=len(texts))
         if parsed is None:
             logger.warning(
-                f"Could not cleanly parse batched LLM output of {len(texts)} items. "
-                f"Raw response: {raw_content[:200]}"
+                f"Could not cleanly parse batched LLM output of {len(texts)} items; "
+                "falling back to individual processing."
             )
             return None, completion_tokens, call_duration
 

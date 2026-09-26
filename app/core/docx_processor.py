@@ -263,7 +263,7 @@ class DocxProcessor:
                 raise
             except Exception as e:
                 stop_processing_event.set()
-                logger.error(f"Fatal error processing item snippet '{snippet}': {e}")
+                logger.error(f"Fatal error processing item #{processed_count + 1}: {e}")
                 raise
 
         async def process_single_paragraph(p: docx.text.paragraph.Paragraph) -> None:
@@ -284,8 +284,7 @@ class DocxProcessor:
                 return
 
             texts = [e.original_text for e in batch]
-            first_snippet = (texts[0][:50] + "...") if len(texts[0]) > 50 else texts[0]
-            batch_desc = f"batch of {len(batch)} items: '{first_snippet}'"
+            batch_desc = f"batch of {len(batch)} items"
 
             async with self.semaphore:
                 if is_cancelled():

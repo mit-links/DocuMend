@@ -196,7 +196,7 @@ async def _run_document_job(
 
         def on_progress(processed: int, total: int, snippet: str, is_complete: bool = False) -> None:
             percent = int((processed / total) * 100) if total > 0 else 100
-            logger.info(f"[Job {job_id}] Progress [{processed}/{total}] ({percent}%): '{snippet}'")
+            logger.info(f"[Job {job_id}] Progress [{processed}/{total}] ({percent}%)")
             t = asyncio.create_task(
                 job_manager.update_progress(
                     job_id=job_id,
