@@ -170,24 +170,30 @@ async def process_document(
     concurrency: Optional[int] = Form(None),
 ):
     """Upload a .docx file and initiate background spelling & grammar processing."""
-    if not file.filename.lower().endswith(".docx"):
-        logger.warning(f"Rejected non-docx file upload: '{file.filename}'")
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file type. Only Microsoft Word (.docx) documents are supported.",
-        )
+    try:
+        if not file.filename.lower().endswith(".docx"):
+            logger.warning(f"Rejected non-docx file upload: '{file.filename}'")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only Microsoft Word (.docx) documents are supported.",
+            )
 
-    content = await file.read()
-    if len(content) == 0:
-        logger.warning(f"Rejected empty file upload: '{file.filename}'")
-        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        content = await file.read()
+        if len(content) == 0:
+            logger.warning(f"Rejected empty file upload: '{file.filename}'")
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
 
-    if concurrency is not None and concurrency < 1:
-        logger.warning(f"Rejected invalid concurrency: {concurrency}")
-        raise HTTPException(
-            status_code=400,
-            detail="Concurrency must be a positive integer greater than or equal to 1.",
-        )
+        if concurrency is not None and concurrency < 1:
+            logger.warning(f"Rejected invalid concurrency: {concurrency}")
+            raise HTTPException(
+                status_code=400,
+                detail="Concurrency must be a positive integer greater than or equal to 1.",
+            )
+    finally:
+        # Guarantee zero disk footprint:
+        # Starlette's SpooledTemporaryFile spills to disk in OS temp directory if > 1MB.
+        # Calling close() immediately deletes any spooled temporary file on disk.
+        await file.close()
 
     job = await job_manager.create_job(filename=file.filename)
     logger.info(

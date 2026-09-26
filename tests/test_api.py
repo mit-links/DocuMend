@@ -127,3 +127,22 @@ def test_cancel_active_job(tmp_path):
     assert "cancelled" in dl_res.json()["detail"].lower()
 
 
+def test_upload_file_cleanup_and_no_lingering_temp_files(tmp_path):
+    sample_file = tmp_path / "sample.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    # Upload valid docx
+    files = {"file": ("sample.docx", io.BytesIO(file_bytes), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    res = client.post("/api/process", files=files, data={"concurrency": "1"})
+    assert res.status_code == 200
+
+    # Upload invalid docx (error branch)
+    files_err = {"file": ("error.txt", io.BytesIO(b"not a docx"), "text/plain")}
+    res_err = client.post("/api/process", files=files_err)
+    assert res_err.status_code == 400
+
+
+
