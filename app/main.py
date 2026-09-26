@@ -1,12 +1,20 @@
+"""Application entrypoint and FastAPI server configuration for DocuMend."""
+
+import argparse
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import logging
 import os
-from contextlib import asynccontextmanager
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+import uvicorn
 
 from app.api.routes import router as api_router
+from app.config import settings
 
 # Configure centralized logging format
 logging.basicConfig(
@@ -18,7 +26,8 @@ logger = logging.getLogger("documend")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Application lifespan context manager."""
     logger.info("DocuMend backend ready to receive requests.")
     yield
     logger.info("DocuMend backend shutting down.")
@@ -35,7 +44,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -50,20 +59,19 @@ if os.path.exists(STATIC_DIR):
 
 
 @app.get("/", include_in_schema=False)
-async def serve_index():
-    """Serve the single-page frontend application."""
+async def serve_index() -> Response:
+    """Serves the single-page frontend application."""
     index_file = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
-    return {"message": "DocuMend API is running. Place index.html in app/static."}
+    return Response(
+        content='{"message": "DocuMend API is running. Place index.html in app/static."}',
+        media_type="application/json",
+    )
 
 
-def main():
+def main() -> None:
     """CLI entrypoint parsing arguments and starting Uvicorn server."""
-    import argparse
-    import uvicorn
-    from app.config import settings
-
     parser = argparse.ArgumentParser(
         description="DocuMend: Local DOCX Grammar & Spell Checker",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
