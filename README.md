@@ -14,6 +14,7 @@ DocuMend guarantees **strict formatting preservation**: inline bold, italic, und
 ## Key Features
 
 - **Model & Provider Agnostic:** Works with any local or remote OpenAI-compatible endpoint (`/v1`), with built-in presets for **LM Studio**, **Ollama**, **Google Gemini**, **ChatGPT**, and **Claude**.
+- **Dual Output Modes:** Choose between **Direct Edit** (`edit`, ready-to-use in-place replacements) and **Suggestions** (`suggest`, standard Word Track Changes `<w:ins>` / `<w:del>` for review in Microsoft Word, LibreOffice Writer, or Google Docs).
 - **Formatting Preservation:** Keeps inline styles intact—including bold, italics, underlines, font families, sizes, colors, subscripts, and superscripts.
 - **Full Document Coverage:** Accurately corrects body paragraphs, bullet lists, and tables without altering document layouts.
 - **Multilingual Copyediting:** Focuses strictly on spelling, grammar, and punctuation while preserving the original language without translation.

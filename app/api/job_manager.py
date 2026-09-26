@@ -16,6 +16,7 @@ class JobState:
 
     job_id: str
     filename: str
+    mode: str = "edit"  # "edit" or "suggest"
     status: str = "pending"  # "pending", "processing", "completed", "failed", "cancelled"
     total_items: int = 0
     processed_items: int = 0
@@ -60,6 +61,7 @@ class JobState:
         data: dict[str, Any] = {
             "job_id": self.job_id,
             "status": self.status,
+            "mode": self.mode,
             "processed": self.processed_items,
             "total": self.total_items,
             "percent": self.progress_percent,
@@ -79,6 +81,7 @@ class JobState:
         return {
             "job_id": self.job_id,
             "filename": self.filename,
+            "mode": self.mode,
             "status": self.status,
             "total_items": self.total_items,
             "processed_items": self.processed_items,
@@ -97,17 +100,18 @@ class JobManager:
         self._jobs: dict[str, JobState] = {}
         self._lock = asyncio.Lock()
 
-    async def create_job(self, filename: str) -> JobState:
+    async def create_job(self, filename: str, mode: str = "edit") -> JobState:
         """Creates and registers a new document processing job.
 
         Args:
             filename: Original filename of uploaded document.
+            mode: Processing mode ("edit" or "suggest").
 
         Returns:
             The created JobState instance.
         """
         job_id = uuid.uuid4().hex[:12]
-        job = JobState(job_id=job_id, filename=filename)
+        job = JobState(job_id=job_id, filename=filename, mode=mode)
         async with self._lock:
             self._jobs[job_id] = job
             self._prune_stale_jobs()

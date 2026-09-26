@@ -212,3 +212,53 @@ def test_get_models_error_structure():
         assert "error" in data
         assert "raw_error" in data
         assert len(data["error"]) > 0
+
+
+def test_process_mode_validation(tmp_path):
+    sample_file = tmp_path / "sample.docx"
+    generate_sample_docx(str(sample_file))
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    files = {
+        "file": (
+            "sample.docx",
+            io.BytesIO(file_bytes),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    }
+
+    # Invalid mode
+    res = client.post("/api/process", files=files, data={"mode": "invalid_mode"})
+    assert res.status_code == 400
+    assert "Supported modes are 'edit' and 'suggest'" in res.json()["detail"]
+
+    # Valid suggest mode
+    files["file"] = (
+        "sample.docx",
+        io.BytesIO(file_bytes),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    with patch("app.api.routes._run_document_job", new_callable=AsyncMock):
+        res2 = client.post("/api/process", files=files, data={"mode": "suggest"})
+    assert res2.status_code == 200
+    data = res2.json()
+    assert data["mode"] == "suggest"
+
+
+@pytest.mark.asyncio
+async def test_download_filename_by_mode():
+    job_edit = await job_manager.create_job(filename="report.docx", mode="edit")
+    await job_manager.complete_job(job_edit.job_id, b"fake_bytes")
+
+    res_edit = client.get(f"/api/jobs/{job_edit.job_id}/download")
+    assert res_edit.status_code == 200
+    assert 'filename="corrected_report.docx"' in res_edit.headers["Content-Disposition"]
+
+    job_suggest = await job_manager.create_job(filename="report.docx", mode="suggest")
+    await job_manager.complete_job(job_suggest.job_id, b"fake_bytes")
+
+    res_suggest = client.get(f"/api/jobs/{job_suggest.job_id}/download")
+    assert res_suggest.status_code == 200
+    assert 'filename="suggested_report.docx"' in res_suggest.headers["Content-Disposition"]
+

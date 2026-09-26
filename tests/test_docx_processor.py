@@ -146,4 +146,49 @@ async def test_docx_processor_server_error_stops_immediately(tmp_path):
     assert call_count <= 2
 
 
+@pytest.mark.asyncio
+async def test_docx_processor_suggest_mode(tmp_path):
+    sample_file = tmp_path / "test.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    mock_client = MockLLMClient()
+    processor = DocxProcessor(llm_client=mock_client, concurrency_limit=2)
+
+    output_bytes, stats = await processor.process_document(
+        docx_bytes=file_bytes,
+        mode="suggest",
+    )
+
+    assert len(output_bytes) > 0
+    assert stats["mode"] == "suggest"
+    assert "revisions_count" in stats
+    assert stats["revisions_count"] > 0
+
+    # Verify that revisions (<w:ins> and <w:del>) exist in the output document
+    output_doc = docx.Document(io.BytesIO(output_bytes))
+    all_dels = []
+    all_inss = []
+    for p in output_doc.paragraphs:
+        all_dels.extend(p._p.xpath("./w:del"))
+        all_inss.extend(p._p.xpath("./w:ins"))
+    assert len(all_dels) > 0
+    assert len(all_inss) > 0
+
+
+@pytest.mark.asyncio
+async def test_docx_processor_invalid_mode_raises():
+    doc = docx.Document()
+    doc.add_paragraph("Hello world")
+    buf = io.BytesIO()
+    doc.save(buf)
+    file_bytes = buf.getvalue()
+
+    processor = DocxProcessor(llm_client=MockLLMClient())
+    with pytest.raises(ValueError, match="Invalid processing mode"):
+        await processor.process_document(docx_bytes=file_bytes, mode="invalid_mode")
+
+
 

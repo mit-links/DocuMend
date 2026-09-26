@@ -82,6 +82,17 @@ const INFO_DATA = {
       </ul>
       <p class="mt-2 text-slate-500">Values less than 1 or non-integers will be rejected.</p>
     `
+  },
+  correctionMode: {
+    title: "Output Mode",
+    icon: "fa-solid fa-code-compare",
+    content: `
+      <p>Choose how DocuMend outputs corrections to your document:</p>
+      <ul class="list-disc pl-4 space-y-2 mt-2">
+        <li><strong>Direct Edit (Default):</strong> Directly applies corrections into the document text, preserving all original formatting (bold, italic, font, color, tables). The output document is clean and immediately ready to use.</li>
+        <li><strong>Suggestions (Track Changes):</strong> Marks all modifications as standard Word Track Changes (<code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">&lt;w:ins&gt;</code> and <code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">&lt;w:del&gt;</code>). When opened in <strong>Microsoft Word</strong>, <strong>LibreOffice Writer</strong>, or <strong>Google Docs</strong>, you can review, accept, or reject each correction individually or all at once.</li>
+      </ul>
+    `
   }
 };
 
@@ -430,6 +441,10 @@ async function startProcessing() {
   formData.append("model", document.getElementById("modelSelect").value.trim());
   formData.append("concurrency", concurrency.toString());
 
+  const modeRadio = document.querySelector('input[name="correctionMode"]:checked');
+  const mode = modeRadio ? modeRadio.value : "edit";
+  formData.append("mode", mode);
+
   try {
     const res = await fetch("/api/process", {
       method: "POST",
@@ -500,9 +515,14 @@ function connectSSE(streamUrl) {
         progressPercent.textContent = "100%";
         progressCounter.textContent = `Completed ${data.total} items`;
         progressStatus.textContent = "Done!";
-        currentSnippetText.textContent = "Document formatting preserved and updated successfully.";
-        progressSpinner.className = "fa-solid fa-circle-check text-emerald-600";
-        progressTitle.textContent = "Correction Completed!";
+        const isSuggest = data.mode === "suggest" || (data.stats && data.stats.mode === "suggest");
+        if (isSuggest) {
+          currentSnippetText.textContent = "Revisions saved as Word Track Changes. Open in Word or LibreOffice to review, accept, or reject suggestions.";
+          progressTitle.textContent = "Suggestions Completed!";
+        } else {
+          currentSnippetText.textContent = "Document formatting preserved and updated successfully.";
+          progressTitle.textContent = "Correction Completed!";
+        }
         if (stopBtn) stopBtn.classList.add("hidden");
 
         // Display performance stats
@@ -517,7 +537,10 @@ function connectSSE(streamUrl) {
 
           if (statElapsedTime) statElapsedTime.textContent = `${stats.elapsed_seconds}s`;
           if (statWordsPerSec) statWordsPerSec.textContent = `${stats.words_per_second} w/s`;
-          if (statTotalWords) statTotalWords.textContent = `${stats.total_words} words checked`;
+          if (statTotalWords) {
+            const extra = stats.revisions_count !== undefined ? ` (${stats.revisions_count} revisions)` : "";
+            statTotalWords.textContent = `${stats.total_words} words checked${extra}`;
+          }
 
           if (stats.tokens_per_second !== null && stats.tokens_per_second !== undefined) {
             if (statTokensPerSec) statTokensPerSec.textContent = `${stats.tokens_per_second} tok/s`;
@@ -543,6 +566,12 @@ function connectSSE(streamUrl) {
         downloadSection.classList.remove("hidden");
         const downloadUrl = data.download_url || `/api/jobs/${data.job_id}/download`;
         manualDownloadBtn.href = downloadUrl;
+        const downloadLabel = downloadSection.querySelector("div span");
+        if (downloadLabel) {
+          downloadLabel.textContent = isSuggest
+            ? "Suggestions ready! Open in Word or LibreOffice to accept/reject changes."
+            : "Document successfully corrected and downloaded!";
+        }
 
         // Trigger automatic browser download
         const hiddenLink = document.createElement("a");

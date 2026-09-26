@@ -150,6 +150,7 @@ async def _run_document_job(
     api_key: Optional[str],
     model: Optional[str],
     concurrency: Optional[int],
+    mode: str = "edit",
 ) -> None:
     """Background task executing the document processing pipeline.
 
@@ -160,11 +161,12 @@ async def _run_document_job(
         api_key: API key.
         model: Model name.
         concurrency: Concurrency limit.
+        mode: Processing mode ("edit" or "suggest").
     """
     start_time = time.time()
     effective_concurrency = concurrency or settings.concurrency_limit
     logger.info(
-        f"[Job {job_id}] Processing pipeline started. "
+        f"[Job {job_id}] Processing pipeline started [mode={mode}]. "
         f"File size: {len(file_bytes)/1024:.1f} KB, Concurrency: {effective_concurrency}, Model: '{model or 'auto'}'"
     )
 
@@ -218,6 +220,7 @@ async def _run_document_job(
                 model_override=model,
                 progress_callback=on_progress,
                 cancel_check=lambda: (job.is_cancelled if job else False),
+                mode=mode,
             )
 
             if job and job.is_cancelled:
@@ -261,6 +264,7 @@ async def process_document(
     api_key: Optional[str] = Form(None),
     model: Optional[str] = Form(None),
     concurrency: Optional[int] = Form(None),
+    mode: Optional[str] = Form("edit"),
 ) -> dict[str, Any]:
     """Uploads a .docx file and initiates background spelling and grammar processing.
 
@@ -270,10 +274,18 @@ async def process_document(
         api_key: Optional API key.
         model: Optional model name.
         concurrency: Optional concurrency limit.
+        mode: Processing mode ("edit" for direct in-place edits, "suggest" for track changes).
 
     Returns:
         Job registration response with stream URL.
     """
+    clean_mode = (mode or "edit").strip().lower()
+    if clean_mode not in ("edit", "suggest"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid processing mode: '{mode}'. Supported modes are 'edit' and 'suggest'.",
+        )
+
     try:
         filename = file.filename or ""
         if not filename.lower().endswith(".docx"):
@@ -305,9 +317,9 @@ async def process_document(
     finally:
         await file.close()
 
-    job = await job_manager.create_job(filename=filename)
+    job = await job_manager.create_job(filename=filename, mode=clean_mode)
     logger.info(
-        f"[Job {job.job_id}] New document uploaded: '{filename}' ({len(content)/1024:.1f} KB). "
+        f"[Job {job.job_id}] New document uploaded: '{filename}' ({len(content)/1024:.1f} KB) [mode={clean_mode}]. "
         f"Server: {base_url or settings.default_base_url}, Model: '{model or 'auto'}', Concurrency: {concurrency or settings.concurrency_limit}"
     )
 
@@ -319,6 +331,7 @@ async def process_document(
             api_key=api_key,
             model=model,
             concurrency=concurrency,
+            mode=clean_mode,
         )
     )
     job.task = task
@@ -326,6 +339,7 @@ async def process_document(
     return {
         "job_id": job.job_id,
         "filename": job.filename,
+        "mode": job.mode,
         "status": "pending",
         "stream_url": f"/api/jobs/{job.job_id}/stream",
     }
@@ -412,7 +426,8 @@ async def download_processed_document(job_id: str) -> Response:
     if job.status != "completed" or not job.result_bytes:
         raise HTTPException(status_code=400, detail="Document processing is not yet completed.")
 
-    download_filename = f"corrected_{job.filename}"
+    prefix = "suggested" if job.mode == "suggest" else "corrected"
+    download_filename = f"{prefix}_{job.filename}"
     safe_filename = urllib.parse.quote(download_filename)
     logger.info(
         f"[Job {job_id}] User downloaded '{download_filename}' ({len(job.result_bytes)/1024:.1f} KB)."

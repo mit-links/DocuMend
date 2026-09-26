@@ -11,6 +11,7 @@ import docx.text.paragraph
 
 from app.core.llm_client import LLMClient
 from app.core.run_aligner import update_paragraph_with_corrected_text
+from app.core.track_changes import RevisionManager
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ class DocxProcessor:
         model_override: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int, str, bool], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
+        mode: str = "edit",
     ) -> tuple[bytes, dict[str, Any]]:
         """Processes a DOCX document in-place and returns updated bytes with statistics.
 
@@ -152,17 +154,27 @@ class DocxProcessor:
             model_override: Optional model name to override the default client model.
             progress_callback: Optional callback invoked with (processed, total, snippet, done).
             cancel_check: Optional callable returning True if processing was requested to stop.
+            mode: Processing mode: "edit" (in-place replacement) or "suggest" (track changes).
 
         Returns:
             Tuple of (reconstructed_docx_bytes, metrics_dict).
 
         Raises:
+            ValueError: If mode is not "edit" or "suggest".
             asyncio.CancelledError: If processing was cancelled.
             RuntimeError: If an unrecoverable LLM or processing error occurred.
         """
+        if mode not in ("edit", "suggest"):
+            raise ValueError(f"Invalid processing mode: '{mode}'. Must be 'edit' or 'suggest'.")
+
         start_time = time.time()
         input_stream = io.BytesIO(docx_bytes)
         doc = docx.Document(input_stream)
+
+        revision_manager: Optional[RevisionManager] = None
+        if mode == "suggest":
+            revision_manager = RevisionManager(author="DocuMend")
+            revision_manager.enable_track_revisions(doc)
 
         elements = self.extract_processable_paragraphs(doc)
         total_count = len(elements)
@@ -171,8 +183,8 @@ class DocxProcessor:
         total_words = sum(e.word_count for e in elements)
 
         logger.info(
-            f"Extracted {total_count} processable elements ({total_words} words) from DOCX: "
-            f"{body_count} body paragraph(s), {table_count} table cell(s)."
+            f"Extracted {total_count} processable elements ({total_words} words) from DOCX "
+            f"[mode={mode}]: {body_count} body paragraph(s), {table_count} table cell(s)."
         )
 
         if total_count == 0:
@@ -184,7 +196,10 @@ class DocxProcessor:
                 "tokens_per_second": None,
                 "total_completion_tokens": None,
                 "total_items": 0,
+                "mode": mode,
             }
+            if mode == "suggest":
+                empty_stats["revisions_count"] = 0
             if progress_callback:
                 progress_callback(0, 0, "No text found to process", True)
             return docx_bytes, empty_stats
@@ -200,6 +215,12 @@ class DocxProcessor:
 
         def is_cancelled() -> bool:
             return stop_processing_event.is_set() or bool(cancel_check and cancel_check())
+
+        def _apply_correction(p: docx.text.paragraph.Paragraph, corr_text: str) -> None:
+            if mode == "suggest" and revision_manager is not None:
+                revision_manager.apply_revisions_to_paragraph(p, corr_text)
+            else:
+                update_paragraph_with_corrected_text(p, corr_text)
 
         async def _execute_single_paragraph(p: docx.text.paragraph.Paragraph) -> None:
             """Executes paragraph correction directly without acquiring semaphore.
@@ -229,7 +250,7 @@ class DocxProcessor:
                     total_completion_tokens += tokens
                 total_gen_time += dur
 
-                update_paragraph_with_corrected_text(p, corrected_text)
+                _apply_correction(p, corrected_text)
                 processed_count += 1
                 if progress_callback:
                     progress_callback(
@@ -291,7 +312,7 @@ class DocxProcessor:
 
                 if corrected_texts is not None and len(corrected_texts) == len(batch):
                     for elem, corr in zip(batch, corrected_texts):
-                        update_paragraph_with_corrected_text(elem.paragraph, corr)
+                        _apply_correction(elem.paragraph, corr)
                         processed_count += 1
                         if progress_callback:
                             elem_snippet = (
@@ -345,7 +366,10 @@ class DocxProcessor:
                 total_completion_tokens if total_completion_tokens > 0 else None
             ),
             "total_items": total_count,
+            "mode": mode,
         }
+        if mode == "suggest" and revision_manager is not None:
+            stats["revisions_count"] = revision_manager.revisions_count
 
         logger.info(
             f"Document processing completed: {total_words} words checked in {elapsed_total:.2f}s "
