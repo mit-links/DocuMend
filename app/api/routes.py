@@ -110,7 +110,7 @@ async def _run_document_job(
         concurrency_limit=effective_concurrency,
     )
 
-    def on_progress(processed: int, total: int, snippet: str, is_complete: bool):
+    def on_progress(processed: int, total: int, snippet: str, is_complete: bool = False):
         percent = int((processed / total) * 100) if total > 0 else 100
         logger.info(f"[Job {job_id}] Progress [{processed}/{total}] ({percent}%): '{snippet}'")
         asyncio.create_task(
@@ -119,7 +119,6 @@ async def _run_document_job(
                 processed=processed,
                 total=total,
                 snippet=snippet,
-                is_complete=is_complete,
             )
         )
 
@@ -219,6 +218,25 @@ async def process_document(
         "filename": job.filename,
         "status": "pending",
         "stream_url": f"/api/jobs/{job.job_id}/stream",
+    }
+
+
+@router.get("/jobs/{job_id}")
+async def get_job_details(job_id: str):
+    """Retrieve current details and performance statistics for a specific job."""
+    job = await job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {
+        "job_id": job.job_id,
+        "filename": job.filename,
+        "status": job.status,
+        "processed": job.processed_items,
+        "total": job.total_items,
+        "percent": job.progress_percent,
+        "snippet": job.current_snippet,
+        "stats": job.stats,
+        "download_url": f"/api/jobs/{job.job_id}/download" if job.status == "completed" else None,
     }
 
 

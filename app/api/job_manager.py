@@ -61,14 +61,13 @@ class JobManager:
         processed: int,
         total: int,
         snippet: str,
-        is_complete: bool = False,
     ):
         """Update job progress and broadcast an SSE event."""
         job = await self.get_job(job_id)
         if not job or job.is_cancelled:
             return
 
-        job.status = "completed" if is_complete else "processing"
+        job.status = "processing"
         job.processed_items = processed
         job.total_items = total
         job.current_snippet = snippet

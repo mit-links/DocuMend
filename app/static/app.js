@@ -386,8 +386,9 @@ function connectSSE(streamUrl) {
         progressTitle.textContent = "Correction Completed!";
         if (stopBtn) stopBtn.classList.add("hidden");
 
-        // Display performance stats if provided
-        if (data.stats) {
+        // Display performance stats
+        const renderStats = (stats) => {
+          if (!stats) return;
           const statsSection = document.getElementById("statsSection");
           const statElapsedTime = document.getElementById("statElapsedTime");
           const statWordsPerSec = document.getElementById("statWordsPerSec");
@@ -395,18 +396,29 @@ function connectSSE(streamUrl) {
           const statTokCard = document.getElementById("statTokPerSecCard");
           const statTokensPerSec = document.getElementById("statTokensPerSec");
 
-          statElapsedTime.textContent = `${data.stats.elapsed_seconds}s`;
-          statWordsPerSec.textContent = `${data.stats.words_per_second} w/s`;
-          statTotalWords.textContent = `${data.stats.total_words} words checked`;
+          if (statElapsedTime) statElapsedTime.textContent = `${stats.elapsed_seconds}s`;
+          if (statWordsPerSec) statWordsPerSec.textContent = `${stats.words_per_second} w/s`;
+          if (statTotalWords) statTotalWords.textContent = `${stats.total_words} words checked`;
 
-          if (data.stats.tokens_per_second !== null && data.stats.tokens_per_second !== undefined) {
-            statTokensPerSec.textContent = `${data.stats.tokens_per_second} tok/s`;
-            statTokCard.classList.remove("hidden");
+          if (stats.tokens_per_second !== null && stats.tokens_per_second !== undefined) {
+            if (statTokensPerSec) statTokensPerSec.textContent = `${stats.tokens_per_second} tok/s`;
+            if (statTokCard) statTokCard.classList.remove("hidden");
           } else {
-            statTokCard.classList.add("hidden");
+            if (statTokCard) statTokCard.classList.add("hidden");
           }
 
           if (statsSection) statsSection.classList.remove("hidden");
+        };
+
+        if (data.stats) {
+          renderStats(data.stats);
+        } else if (data.job_id) {
+          fetch(`/api/jobs/${data.job_id}`)
+            .then(res => res.json())
+            .then(jobData => {
+              if (jobData.stats) renderStats(jobData.stats);
+            })
+            .catch(err => console.warn("Failed to fetch fallback job stats:", err));
         }
 
         downloadSection.classList.remove("hidden");

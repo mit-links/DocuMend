@@ -146,4 +146,30 @@ def test_upload_file_cleanup_and_no_lingering_temp_files(tmp_path):
     assert res_err.status_code == 400
 
 
+def test_get_job_details(tmp_path):
+    sample_file = tmp_path / "sample.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    files = {"file": ("sample.docx", io.BytesIO(file_bytes), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    res = client.post("/api/process", files=files, data={"concurrency": "1"})
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+
+    # Query details endpoint
+    details_res = client.get(f"/api/jobs/{job_id}")
+    assert details_res.status_code == 200
+    data = details_res.json()
+    assert data["job_id"] == job_id
+    assert "status" in data
+    assert "percent" in data
+
+    # Non-existent job
+    missing_res = client.get("/api/jobs/missing999")
+    assert missing_res.status_code == 404
+
+
+
 
