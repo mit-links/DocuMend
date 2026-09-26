@@ -104,6 +104,12 @@ async def process_document(
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="The uploaded file is empty.")
 
+    if concurrency is not None and concurrency < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Concurrency must be a positive integer greater than or equal to 1.",
+        )
+
     job = await job_manager.create_job(filename=file.filename)
 
     # Launch background processing pipeline

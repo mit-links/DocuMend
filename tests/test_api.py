@@ -44,6 +44,7 @@ def test_process_valid_docx(tmp_path):
         "base_url": "http://127.0.0.1:1234/v1",
         "api_key": "not-needed",
         "model": "qwen/qwen3.5-9b",
+        "concurrency": "4",
     }
     response = client.post("/api/process", files=files, data=data)
     assert response.status_code == 200
@@ -51,3 +52,32 @@ def test_process_valid_docx(tmp_path):
     assert "job_id" in res_data
     assert res_data["status"] == "pending"
     assert "stream_url" in res_data
+
+
+def test_process_invalid_concurrency(tmp_path):
+    sample_file = tmp_path / "sample.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    # Test concurrency = 0 (rejected with 400)
+    files = {"file": ("sample.docx", io.BytesIO(file_bytes), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    data = {"concurrency": "0"}
+    response = client.post("/api/process", files=files, data=data)
+    assert response.status_code == 400
+    assert "positive integer" in response.json()["detail"]
+
+    # Test negative concurrency = -5 (rejected with 400)
+    files = {"file": ("sample.docx", io.BytesIO(file_bytes), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    data = {"concurrency": "-5"}
+    response = client.post("/api/process", files=files, data=data)
+    assert response.status_code == 400
+    assert "positive integer" in response.json()["detail"]
+
+    # Test non-integer concurrency = "abc" (FastAPI rejects with 422)
+    files = {"file": ("sample.docx", io.BytesIO(file_bytes), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    data = {"concurrency": "abc"}
+    response = client.post("/api/process", files=files, data=data)
+    assert response.status_code == 422
+

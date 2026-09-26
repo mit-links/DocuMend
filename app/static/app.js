@@ -56,11 +56,13 @@ const INFO_DATA = {
     icon: "fa-solid fa-sliders",
     content: `
       <p>Controls how many paragraphs are processed simultaneously by your LLM server.</p>
-      <ul class="list-disc pl-4 space-y-1 mt-1">
-        <li><strong>1:</strong> Conservative & lowest VRAM usage. Best for small GPUs or CPU-only inference.</li>
-        <li><strong>2 (Recommended):</strong> Balances fast throughput with smooth local inference.</li>
-        <li><strong>3&ndash;4:</strong> Faster throughput if you have high-end GPU VRAM.</li>
+      <p class="mt-1">Enter any <strong>positive integer</strong> &ge; 1 (pre-filled with <strong>2</strong>).</p>
+      <ul class="list-disc pl-4 space-y-1 mt-2">
+        <li><strong>1:</strong> Conservative & lowest VRAM usage. Ideal for CPU-only inference or smaller GPUs.</li>
+        <li><strong>2 (Recommended):</strong> Default balance between throughput and smooth local generation.</li>
+        <li><strong>3&ndash;8+:</strong> Faster throughput if your hardware (VRAM/Compute) can handle concurrent requests.</li>
       </ul>
+      <p class="mt-2 text-slate-500">Values less than 1 or non-integers will be rejected.</p>
     `
   }
 };
@@ -206,21 +208,58 @@ function handleFile(file) {
   checkCanStart();
 }
 
+function getValidConcurrency() {
+  const input = document.getElementById("concurrencyInput");
+  if (!input) return 2;
+  const raw = input.value.trim();
+  const val = Number(raw);
+  if (!raw || isNaN(val) || !Number.isInteger(val) || val < 1) {
+    return null;
+  }
+  return val;
+}
+
+function validateConcurrencyUI() {
+  const input = document.getElementById("concurrencyInput");
+  const errorEl = document.getElementById("concurrencyError");
+  const valid = getValidConcurrency() !== null;
+
+  if (!valid) {
+    if (errorEl) errorEl.classList.remove("hidden");
+    if (input) input.classList.add("border-rose-500", "ring-1", "ring-rose-500");
+  } else {
+    if (errorEl) errorEl.classList.add("hidden");
+    if (input) input.classList.remove("border-rose-500", "ring-1", "ring-rose-500");
+  }
+  checkCanStart();
+  return valid;
+}
+
 function checkCanStart() {
   const modelSelect = document.getElementById("modelSelect");
   const startBtn = document.getElementById("startProcessBtn");
 
   const hasFile = selectedFile !== null;
   const hasModel = modelSelect.value && modelSelect.value.trim() !== "";
+  const hasValidConcurrency = getValidConcurrency() !== null;
 
-  startBtn.disabled = !(hasFile && hasModel);
+  startBtn.disabled = !(hasFile && hasModel && hasValidConcurrency);
 }
 
 document.getElementById("modelSelect").addEventListener("change", checkCanStart);
+document.getElementById("concurrencyInput").addEventListener("input", validateConcurrencyUI);
+document.getElementById("concurrencyInput").addEventListener("change", validateConcurrencyUI);
 
 // Start document processing
 async function startProcessing() {
   if (!selectedFile) return;
+
+  const concurrency = getValidConcurrency();
+  if (concurrency === null) {
+    validateConcurrencyUI();
+    document.getElementById("concurrencyInput").focus();
+    return;
+  }
 
   const startBtn = document.getElementById("startProcessBtn");
   const progressCard = document.getElementById("progressCard");
@@ -249,7 +288,7 @@ async function startProcessing() {
   formData.append("base_url", document.getElementById("serverUrl").value.trim());
   formData.append("api_key", document.getElementById("apiKey").value.trim());
   formData.append("model", document.getElementById("modelSelect").value.trim());
-  formData.append("concurrency", document.getElementById("concurrencySelect").value);
+  formData.append("concurrency", concurrency.toString());
 
   try {
     const res = await fetch("/api/process", {
