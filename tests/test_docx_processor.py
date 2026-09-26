@@ -8,6 +8,9 @@ from scripts.create_test_doc import generate_sample_docx
 class MockLLMClient:
     """Mock LLM client for deterministic unit testing."""
 
+    def __init__(self, enable_batch: bool = True):
+        self.enable_batch = enable_batch
+
     async def correct_text(self, text: str, model_override=None) -> str:
         corrections = {
             "Helo, this is a test documnt": "Hello, this is a test document",
@@ -16,6 +19,12 @@ class MockLLMClient:
             "Locaton": "Location",
         }
         return corrections.get(text, text)
+
+    async def correct_batch(self, texts, model_override=None):
+        if not self.enable_batch:
+            return None, None, 0.0
+        results = [await self.correct_text(t, model_override) for t in texts]
+        return results, len(results) * 5, 0.05
 
 
 @pytest.mark.asyncio
@@ -83,4 +92,26 @@ async def test_docx_processor_cancellation(tmp_path):
             docx_bytes=file_bytes,
             cancel_check=lambda: True,
         )
+
+
+@pytest.mark.asyncio
+async def test_docx_processor_batch_fallback(tmp_path):
+    sample_file = tmp_path / "test.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    # Mock client with batch disabled (forces fallback to individual items)
+    mock_client = MockLLMClient(enable_batch=False)
+    processor = DocxProcessor(llm_client=mock_client, concurrency_limit=2)
+
+    output_bytes, stats = await processor.process_document(docx_bytes=file_bytes)
+    assert len(output_bytes) > 0
+    assert stats["total_items"] > 0
+
+    output_doc = docx.Document(io.BytesIO(output_bytes))
+    para_texts = [p.text for p in output_doc.paragraphs if p.text.strip()]
+    assert "Hello, this is a test document" in para_texts[0]
+
 

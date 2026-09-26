@@ -41,6 +41,36 @@ class DocxProcessor:
 
         return items
 
+    def chunk_items_into_batches(
+        self,
+        items: List[Tuple[str, docx.text.paragraph.Paragraph]],
+        max_batch_size: int = 6,
+        max_batch_words: int = 250,
+    ) -> List[List[Tuple[str, docx.text.paragraph.Paragraph]]]:
+        """Group consecutive processable items into small batches by count and word limit."""
+        batches = []
+        current_batch = []
+        current_words = 0
+
+        for item in items:
+            item_type, p = item
+            words = len(p.text.split())
+            if current_batch and (
+                len(current_batch) >= max_batch_size
+                or (current_words + words > max_batch_words and current_words > 0)
+            ):
+                batches.append(current_batch)
+                current_batch = []
+                current_words = 0
+
+            current_batch.append(item)
+            current_words += words
+
+        if current_batch:
+            batches.append(current_batch)
+
+        return batches
+
     async def process_document(
         self,
         docx_bytes: bytes,
@@ -78,11 +108,14 @@ class DocxProcessor:
                 progress_callback(0, 0, "No text found to process", True)
             return docx_bytes, empty_stats
 
+        batches = self.chunk_items_into_batches(processable, max_batch_size=6, max_batch_words=250)
+        logger.info(f"Grouped {total_count} elements into {len(batches)} batch(es) for processing.")
+
         processed_count = 0
         total_completion_tokens = 0
         total_gen_time = 0.0
 
-        async def process_single_item(item_type: str, p: docx.text.paragraph.Paragraph):
+        async def process_single_paragraph(item_type: str, p: docx.text.paragraph.Paragraph):
             nonlocal processed_count, total_completion_tokens, total_gen_time
             if cancel_check and cancel_check():
                 return
@@ -126,8 +159,66 @@ class DocxProcessor:
                                 processed_count >= total_count,
                             )
 
-        # Process paragraphs concurrently within semaphore bounds
-        tasks = [process_single_item(item_type, p) for item_type, p in processable]
+        async def process_batch(batch: List[Tuple[str, docx.text.paragraph.Paragraph]]):
+            nonlocal processed_count, total_completion_tokens, total_gen_time
+            if cancel_check and cancel_check():
+                return
+
+            if len(batch) == 1:
+                item_type, p = batch[0]
+                await process_single_paragraph(item_type, p)
+                return
+
+            texts = [p.text for _, p in batch]
+            first_snippet = (texts[0][:50] + "...") if len(texts[0]) > 50 else texts[0]
+            batch_desc = f"batch of {len(batch)} items: '{first_snippet}'"
+
+            async with self.semaphore:
+                if cancel_check and cancel_check():
+                    return
+
+                call_start = time.time()
+                corrected_texts = None
+                tokens = None
+                dur = 0.0
+
+                try:
+                    corrected_texts, tokens, dur = await self.llm_client.correct_batch(
+                        texts, model_override=model_override
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Batch correction failed for {batch_desc}: {e}. Falling back to single items.")
+
+                if tokens is not None:
+                    total_completion_tokens += tokens
+                total_gen_time += dur
+
+                if cancel_check and cancel_check():
+                    return
+
+                if corrected_texts is not None and len(corrected_texts) == len(batch):
+                    for (_, p), corr in zip(batch, corrected_texts):
+                        update_paragraph_with_corrected_text(p, corr)
+                        processed_count += 1
+                        if progress_callback:
+                            snippet = (p.text[:60] + "...") if len(p.text) > 60 else p.text
+                            progress_callback(
+                                processed_count,
+                                total_count,
+                                snippet,
+                                processed_count >= total_count,
+                            )
+                else:
+                    logger.info(f"Falling back to individual item processing for {batch_desc}")
+                    for item_type, p in batch:
+                        if cancel_check and cancel_check():
+                            return
+                        await process_single_paragraph(item_type, p)
+
+        # Process batches concurrently within semaphore bounds
+        tasks = [process_batch(b) for b in batches]
         await asyncio.gather(*tasks)
 
         if cancel_check and cancel_check():

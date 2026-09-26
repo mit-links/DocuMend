@@ -47,3 +47,29 @@ def test_sanitize_wrapping_quotes():
 def test_sanitize_empty_fallback():
     assert sanitize_llm_output("", "Original text") == "Original text"
     assert sanitize_llm_output("   ", "Original text") == "Original text"
+
+
+def test_parse_batched_output():
+    from app.core.sanitizer import parse_batched_output
+
+    # Valid bracketed
+    raw = "[1] Hello world\n[2] Testing batching\n[3] Third sentence"
+    parsed = parse_batched_output(raw, expected_count=3)
+    assert parsed == ["Hello world", "Testing batching", "Third sentence"]
+
+    # In markdown fence with trailing note
+    raw_fence = "```text\n[1] First\n[2] Second\n\nNote: All fixed.\n```"
+    parsed_fence = parse_batched_output(raw_fence, expected_count=2)
+    assert parsed_fence == ["First", "Second"]
+
+    # Numbered dot style
+    raw_dot = "1. Item one\n2. Item two"
+    parsed_dot = parse_batched_output(raw_dot, expected_count=2)
+    assert parsed_dot == ["Item one", "Item two"]
+
+    # Count mismatch returns None
+    assert parse_batched_output("[1] One\n[2] Two", expected_count=3) is None
+
+    # Empty / invalid returns None
+    assert parse_batched_output("", expected_count=2) is None
+

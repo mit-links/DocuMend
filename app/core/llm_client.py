@@ -7,10 +7,10 @@ with multilingual prompt constraints and sanitization.
 import asyncio
 import logging
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from openai import AsyncOpenAI
 
-from app.core.sanitizer import sanitize_llm_output
+from app.core.sanitizer import sanitize_llm_output, parse_batched_output
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,21 @@ SYSTEM_PROMPT = (
     "Preserve the original language of the text (e.g., German, English, French, Spanish) - NEVER translate to another language.\n"
     "Do not alter tone, vocabulary, or sentence structure unless grammatically incorrect.\n"
     "Do not add commentary, notes, introductory phrases, or markdown fences.\n"
+    "Do not generate reasoning, thoughts, or <think> tags. Directly output the corrected text.\n"
     "Return STRICTLY the corrected text and nothing else."
+)
+
+BATCH_SYSTEM_PROMPT = (
+    "You are an expert multilingual copyeditor.\n"
+    "Correct ONLY spelling, grammar, and punctuation for each numbered item below.\n"
+    "Preserve the original language of each item (e.g., German, English, French, Spanish) - NEVER translate.\n"
+    "Do not alter tone, vocabulary, or sentence structure unless grammatically incorrect.\n"
+    "Do not add commentary, notes, introductory phrases, or markdown fences.\n"
+    "Do not generate reasoning, thoughts, or <think> tags.\n"
+    "Return EXACTLY the same number of items using the format:\n"
+    "[1] <corrected text>\n"
+    "[2] <corrected text>\n"
+    "Return STRICTLY the numbered items and nothing else."
 )
 
 
@@ -148,6 +162,32 @@ class LLMClient:
 
         return unloaded
 
+    async def _call_chat_completions(
+        self,
+        messages: List[dict],
+        active_model: str,
+    ):
+        """Call chat completions with assistant think-prefill for reasoning suppression, falling back if rejected."""
+        # Append empty think block to pre-emptively terminate reasoning on CoT models (Qwen 3.5, DeepSeek, etc.)
+        messages_with_prefill = list(messages) + [{"role": "assistant", "content": "<think>\n</think>"}]
+        try:
+            return await self._client.chat.completions.create(
+                model=active_model,
+                messages=messages_with_prefill,
+                temperature=self.temperature,
+            )
+        except Exception as e:
+            err_str = str(e).lower()
+            # If server or API rejects assistant message at the end (e.g. strict OpenAI API), retry without prefill
+            if "assistant" in err_str or "role" in err_str or "400" in err_str:
+                logger.debug(f"API rejected assistant prefill ({e}); retrying with standard messages.")
+                return await self._client.chat.completions.create(
+                    model=active_model,
+                    messages=messages,
+                    temperature=self.temperature,
+                )
+            raise
+
     async def correct_text(self, text: str, model_override: Optional[str] = None) -> str:
         """Send a single piece of text for spelling & grammar correction."""
         stripped = text.strip()
@@ -174,11 +214,7 @@ class LLMClient:
         for attempt in range(max_retries + 1):
             start_call = time.time()
             try:
-                response = await self._client.chat.completions.create(
-                    model=active_model,
-                    messages=messages,
-                    temperature=self.temperature,
-                )
+                response = await self._call_chat_completions(messages, active_model)
                 call_duration = time.time() - start_call
                 raw_content = response.choices[0].message.content or ""
                 cleaned = sanitize_llm_output(raw_content, original_text=stripped)
@@ -212,3 +248,70 @@ class LLMClient:
                     return text
 
         return text
+
+    async def correct_batch(
+        self,
+        texts: List[str],
+        model_override: Optional[str] = None,
+    ) -> Tuple[Optional[List[str]], Optional[int], float]:
+        """Send a batch of texts for spelling & grammar correction in a single request.
+
+        Returns (list_of_corrected_texts, completion_tokens, duration).
+        If the batch cannot be cleanly parsed or items count mismatch, returns (None, tokens, duration).
+        """
+        if not texts:
+            return [], 0, 0.0
+
+        if len(texts) == 1:
+            res = await self.correct_text(texts[0], model_override=model_override)
+            tokens = getattr(res, "completion_tokens", None)
+            dur = getattr(res, "duration", 0.0)
+            return [str(res)], tokens, dur
+
+        active_model = model_override or self.model
+        if not active_model:
+            models = await self.list_models()
+            if not models:
+                raise ValueError("No models available on the specified LLM server.")
+            active_model = models[0]
+
+        items_str = "\n".join(f"[{i+1}] {t.strip()}" for i, t in enumerate(texts))
+        user_content = f"Items to correct:\n{items_str}"
+
+        messages = [
+            {"role": "system", "content": BATCH_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        start_call = time.time()
+        try:
+            response = await self._call_chat_completions(messages, active_model)
+            call_duration = time.time() - start_call
+            raw_content = response.choices[0].message.content or ""
+
+            completion_tokens = None
+            if getattr(response, "usage", None):
+                completion_tokens = response.usage.completion_tokens
+
+            parsed = parse_batched_output(raw_content, expected_count=len(texts))
+            if parsed is None:
+                logger.warning(
+                    f"Could not cleanly parse batched LLM output of {len(texts)} items. "
+                    f"Raw response: {raw_content[:200]}"
+                )
+                return None, completion_tokens, call_duration
+
+            # Reapply original leading and trailing whitespace to each item
+            final_items = []
+            for orig, corr in zip(texts, parsed):
+                cleaned = sanitize_llm_output(corr, original_text=orig.strip())
+                leading_ws = orig[: len(orig) - len(orig.lstrip())]
+                trailing_ws = orig[len(orig.rstrip()) :]
+                final_items.append(f"{leading_ws}{cleaned}{trailing_ws}")
+
+            return final_items, completion_tokens, call_duration
+
+        except Exception as e:
+            call_duration = time.time() - start_call
+            logger.warning(f"Batched inference failed: {e}")
+            return None, None, call_duration
