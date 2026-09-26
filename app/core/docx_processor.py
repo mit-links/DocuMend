@@ -58,8 +58,15 @@ class DocxProcessor:
 
         processable = self.extract_processable_paragraphs(doc)
         total_count = len(processable)
+        body_count = sum(1 for t, _ in processable if t == "paragraph")
+        table_count = sum(1 for t, _ in processable if t == "table_cell")
+        logger.info(
+            f"Extracted {total_count} processable elements from DOCX: "
+            f"{body_count} body paragraph(s), {table_count} table cell(s)."
+        )
 
         if total_count == 0:
+            logger.warning("No processable text elements found in document.")
             if progress_callback:
                 progress_callback(0, 0, "No text found to process", True)
             return docx_bytes

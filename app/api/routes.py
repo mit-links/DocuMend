@@ -1,7 +1,7 @@
-"""FastAPI route handlers for DocuMend."""
 import asyncio
 import json
 import logging
+import time
 from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -11,7 +11,7 @@ from app.config import settings
 from app.core.docx_processor import DocxProcessor
 from app.core.llm_client import LLMClient
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("documend.api")
 
 router = APIRouter(prefix="/api")
 
@@ -25,9 +25,11 @@ async def get_available_models(
     target_url = base_url or settings.default_base_url
     target_key = api_key or settings.default_api_key
 
+    logger.info(f"Querying models from LLM server at {target_url}...")
     try:
         client = LLMClient(base_url=target_url, api_key=target_key)
         models = await client.list_models()
+        logger.info(f"Connected to {target_url}. Found {len(models)} model(s): {models}")
         return {
             "status": "connected",
             "base_url": client.base_url,
@@ -52,6 +54,13 @@ async def _run_document_job(
     concurrency: Optional[int],
 ):
     """Background task executing the document processing pipeline."""
+    start_time = time.time()
+    effective_concurrency = concurrency or settings.concurrency_limit
+    logger.info(
+        f"[Job {job_id}] Processing pipeline started. "
+        f"File size: {len(file_bytes)/1024:.1f} KB, Concurrency: {effective_concurrency}, Model: '{model or 'auto'}'"
+    )
+
     client = LLMClient(
         base_url=base_url,
         api_key=api_key,
@@ -59,10 +68,12 @@ async def _run_document_job(
     )
     processor = DocxProcessor(
         llm_client=client,
-        concurrency_limit=concurrency or settings.concurrency_limit,
+        concurrency_limit=effective_concurrency,
     )
 
     def on_progress(processed: int, total: int, snippet: str, is_complete: bool):
+        percent = int((processed / total) * 100) if total > 0 else 100
+        logger.info(f"[Job {job_id}] Progress [{processed}/{total}] ({percent}%): '{snippet}'")
         asyncio.create_task(
             job_manager.update_progress(
                 job_id=job_id,
@@ -79,9 +90,15 @@ async def _run_document_job(
             model_override=model,
             progress_callback=on_progress,
         )
+        duration = time.time() - start_time
+        logger.info(
+            f"[Job {job_id}] Document successfully corrected in {duration:.2f}s "
+            f"(output size: {len(corrected_bytes)/1024:.1f} KB)."
+        )
         await job_manager.complete_job(job_id, corrected_bytes)
     except Exception as e:
-        logger.exception(f"Job {job_id} encountered an error: {e}")
+        duration = time.time() - start_time
+        logger.exception(f"[Job {job_id}] Processing failed after {duration:.2f}s: {e}")
         await job_manager.fail_job(job_id, str(e))
 
 
@@ -95,6 +112,7 @@ async def process_document(
 ):
     """Upload a .docx file and initiate background spelling & grammar processing."""
     if not file.filename.lower().endswith(".docx"):
+        logger.warning(f"Rejected non-docx file upload: '{file.filename}'")
         raise HTTPException(
             status_code=400,
             detail="Invalid file type. Only Microsoft Word (.docx) documents are supported.",
@@ -102,15 +120,21 @@ async def process_document(
 
     content = await file.read()
     if len(content) == 0:
+        logger.warning(f"Rejected empty file upload: '{file.filename}'")
         raise HTTPException(status_code=400, detail="The uploaded file is empty.")
 
     if concurrency is not None and concurrency < 1:
+        logger.warning(f"Rejected invalid concurrency: {concurrency}")
         raise HTTPException(
             status_code=400,
             detail="Concurrency must be a positive integer greater than or equal to 1.",
         )
 
     job = await job_manager.create_job(filename=file.filename)
+    logger.info(
+        f"[Job {job.job_id}] New document uploaded: '{file.filename}' ({len(content)/1024:.1f} KB). "
+        f"Server: {base_url or settings.default_base_url}, Model: '{model or 'auto'}', Concurrency: {concurrency or settings.concurrency_limit}"
+    )
 
     # Launch background processing pipeline
     asyncio.create_task(
@@ -191,6 +215,7 @@ async def download_processed_document(job_id: str):
         raise HTTPException(status_code=400, detail="Document processing is not yet completed.")
 
     download_filename = f"corrected_{job.filename}"
+    logger.info(f"[Job {job_id}] User downloaded '{download_filename}' ({len(job.result_bytes)/1024:.1f} KB).")
     return Response(
         content=job.result_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
