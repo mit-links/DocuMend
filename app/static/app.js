@@ -292,6 +292,8 @@ async function startProcessing() {
 
   startBtn.disabled = true;
   downloadSection.classList.add("hidden");
+  const statsSection = document.getElementById("statsSection");
+  if (statsSection) statsSection.classList.add("hidden");
   progressCard.classList.remove("hidden");
   progressBar.style.width = "0%";
   progressPercent.textContent = "0%";
@@ -371,6 +373,29 @@ function connectSSE(streamUrl) {
         currentSnippetText.textContent = "Document formatting preserved and updated successfully.";
         progressSpinner.className = "fa-solid fa-circle-check text-emerald-600";
         progressTitle.textContent = "Correction Completed!";
+
+        // Display performance stats if provided
+        if (data.stats) {
+          const statsSection = document.getElementById("statsSection");
+          const statElapsedTime = document.getElementById("statElapsedTime");
+          const statWordsPerSec = document.getElementById("statWordsPerSec");
+          const statTotalWords = document.getElementById("statTotalWords");
+          const statTokCard = document.getElementById("statTokPerSecCard");
+          const statTokensPerSec = document.getElementById("statTokensPerSec");
+
+          statElapsedTime.textContent = `${data.stats.elapsed_seconds}s`;
+          statWordsPerSec.textContent = `${data.stats.words_per_second} w/s`;
+          statTotalWords.textContent = `${data.stats.total_words} words checked`;
+
+          if (data.stats.tokens_per_second !== null && data.stats.tokens_per_second !== undefined) {
+            statTokensPerSec.textContent = `${data.stats.tokens_per_second} tok/s`;
+            statTokCard.classList.remove("hidden");
+          } else {
+            statTokCard.classList.add("hidden");
+          }
+
+          if (statsSection) statsSection.classList.remove("hidden");
+        }
 
         downloadSection.classList.remove("hidden");
         const downloadUrl = data.download_url || `/api/jobs/${data.job_id}/download`;

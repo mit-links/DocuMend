@@ -34,7 +34,7 @@ async def test_docx_processor_extraction_and_replacement(tmp_path):
     def on_progress(processed, total, snippet, is_complete):
         progress_events.append((processed, total, is_complete))
 
-    output_bytes = await processor.process_document(
+    output_bytes, stats = await processor.process_document(
         docx_bytes=file_bytes,
         progress_callback=on_progress,
     )
@@ -42,6 +42,12 @@ async def test_docx_processor_extraction_and_replacement(tmp_path):
     assert len(output_bytes) > 0
     assert len(progress_events) > 0
     assert progress_events[-1][2] is True  # is_complete
+
+    # Verify stats dictionary
+    assert stats["total_words"] > 0
+    assert stats["words_per_second"] >= 0
+    assert stats["elapsed_seconds"] >= 0
+    assert stats["total_items"] == len(progress_events)
 
     # Verify that the generated output docx can be parsed and has the corrected text
     output_doc = docx.Document(io.BytesIO(output_bytes))

@@ -38,11 +38,17 @@ async def main():
     def progress(processed, total, snippet, is_complete):
         print(f"Progress: [{processed}/{total}] {snippet} (complete={is_complete})")
 
-    corrected_bytes = await processor.process_document(
+    corrected_bytes, stats = await processor.process_document(
         docx_bytes=doc_bytes,
         model_override=selected_model,
         progress_callback=progress,
     )
+
+    print(f"\n--- PERFORMANCE STATS ---")
+    print(f"Elapsed Time: {stats['elapsed_seconds']}s")
+    print(f"Words Checked: {stats['total_words']} ({stats['words_per_second']} words/sec)")
+    if stats['tokens_per_second']:
+        print(f"Generation Speed: {stats['tokens_per_second']} tokens/sec")
 
     with open("tests/sample_docs/test_doc_corrected.docx", "wb") as f:
         f.write(corrected_bytes)

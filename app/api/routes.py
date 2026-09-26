@@ -124,7 +124,7 @@ async def _run_document_job(
         )
 
     try:
-        corrected_bytes = await processor.process_document(
+        corrected_bytes, stats = await processor.process_document(
             docx_bytes=file_bytes,
             model_override=model,
             progress_callback=on_progress,
@@ -132,9 +132,11 @@ async def _run_document_job(
         duration = time.time() - start_time
         logger.info(
             f"[Job {job_id}] Document successfully corrected in {duration:.2f}s "
-            f"(output size: {len(corrected_bytes)/1024:.1f} KB)."
+            f"(output: {len(corrected_bytes)/1024:.1f} KB, speed: {stats.get('words_per_second')} words/s"
+            + (f", {stats.get('tokens_per_second')} tok/s" if stats.get("tokens_per_second") else "")
+            + ")."
         )
-        await job_manager.complete_job(job_id, corrected_bytes)
+        await job_manager.complete_job(job_id, corrected_bytes, stats=stats)
     except Exception as e:
         duration = time.time() - start_time
         logger.exception(f"[Job {job_id}] Processing failed after {duration:.2f}s: {e}")
@@ -214,6 +216,8 @@ async def stream_job_progress(job_id: str):
         }
         if job.status == "completed":
             initial_data["download_url"] = f"/api/jobs/{job.job_id}/download"
+            if job.stats:
+                initial_data["stats"] = job.stats
         yield f"data: {json.dumps(initial_data)}\n\n"
 
         if job.status in ("completed", "failed"):

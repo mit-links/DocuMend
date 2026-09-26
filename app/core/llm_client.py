@@ -6,6 +6,7 @@ with multilingual prompt constraints and sanitization.
 
 import asyncio
 import logging
+import time
 from typing import List, Optional
 from openai import AsyncOpenAI
 
@@ -13,6 +14,27 @@ from app.core.sanitizer import sanitize_llm_output
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class LLMResponse(str):
+    """String subclass containing optional token usage and timing metadata."""
+
+    completion_tokens: Optional[int] = None
+    prompt_tokens: Optional[int] = None
+    duration: float = 0.0
+
+    def __new__(
+        cls,
+        text: str,
+        completion_tokens: Optional[int] = None,
+        prompt_tokens: Optional[int] = None,
+        duration: float = 0.0,
+    ):
+        obj = str.__new__(cls, text)
+        obj.completion_tokens = completion_tokens
+        obj.prompt_tokens = prompt_tokens
+        obj.duration = duration
+        return obj
 
 SYSTEM_PROMPT = (
     "You are an expert multilingual copyeditor.\n"
@@ -150,19 +172,34 @@ class LLMClient:
         last_error = None
 
         for attempt in range(max_retries + 1):
+            start_call = time.time()
             try:
                 response = await self._client.chat.completions.create(
                     model=active_model,
                     messages=messages,
                     temperature=self.temperature,
                 )
+                call_duration = time.time() - start_call
                 raw_content = response.choices[0].message.content or ""
                 cleaned = sanitize_llm_output(raw_content, original_text=stripped)
 
                 # Preserve leading/trailing whitespace from original text
                 leading_ws = text[: len(text) - len(text.lstrip())]
                 trailing_ws = text[len(text.rstrip()) :]
-                return f"{leading_ws}{cleaned}{trailing_ws}"
+                final_text = f"{leading_ws}{cleaned}{trailing_ws}"
+
+                completion_tokens = None
+                prompt_tokens = None
+                if getattr(response, "usage", None):
+                    completion_tokens = response.usage.completion_tokens
+                    prompt_tokens = response.usage.prompt_tokens
+
+                return LLMResponse(
+                    final_text,
+                    completion_tokens=completion_tokens,
+                    prompt_tokens=prompt_tokens,
+                    duration=call_duration,
+                )
 
             except Exception as e:
                 last_error = e

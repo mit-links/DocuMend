@@ -3,7 +3,7 @@ import asyncio
 from dataclasses import dataclass, field
 import datetime
 import logging
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ class JobState:
     current_snippet: str = ""
     error_message: Optional[str] = None
     result_bytes: Optional[bytes] = None
+    stats: Optional[Dict[str, Any]] = None
     created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
     events: asyncio.Queue = field(default_factory=asyncio.Queue)
 
@@ -80,8 +81,13 @@ class JobManager:
         }
         await job.events.put(event_data)
 
-    async def complete_job(self, job_id: str, result_bytes: bytes):
-        """Mark job as successfully completed with final document bytes."""
+    async def complete_job(
+        self,
+        job_id: str,
+        result_bytes: bytes,
+        stats: Optional[Dict[str, Any]] = None,
+    ):
+        """Mark job as successfully completed with final document bytes and stats."""
         job = await self.get_job(job_id)
         if not job:
             return
@@ -89,6 +95,7 @@ class JobManager:
         job.status = "completed"
         job.result_bytes = result_bytes
         job.processed_items = job.total_items
+        job.stats = stats
 
         await job.events.put({
             "job_id": job.job_id,
@@ -97,6 +104,7 @@ class JobManager:
             "processed": job.total_items,
             "total": job.total_items,
             "download_url": f"/api/jobs/{job.job_id}/download",
+            "stats": stats,
         })
 
     async def fail_job(self, job_id: str, error_message: str):
