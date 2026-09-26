@@ -165,15 +165,20 @@ function setPreset(url) {
       keyField.value = "";
       keyField.placeholder = "Enter your API key";
       keyField.focus();
-      updateConnectionBadge("checking", "Enter API Key");
-      return;
     }
   } else {
     if (!keyField.value) {
       keyField.value = "not-needed";
     }
   }
-  fetchModels(true);
+
+  // Do not attempt connection automatically; prompt user to press "Connect & Fetch"
+  updateConnectionBadge("checking", "Click Connect & Fetch");
+  const modelSelect = document.getElementById("modelSelect");
+  if (modelSelect) {
+    modelSelect.innerHTML = '<option value="">Click "Connect & Fetch" to discover models</option>';
+  }
+  checkCanStart();
 }
 
 // Update connection status badge (top right header)
