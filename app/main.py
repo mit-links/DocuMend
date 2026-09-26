@@ -8,7 +8,6 @@ import os
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -38,15 +37,6 @@ app = FastAPI(
     description="Privacy-preserving local DOCX grammar and spell checker powered by any OpenAI-compatible LLM runtime.",
     version="0.1.0",
     lifespan=lifespan,
-)
-
-# Enable CORS for local client-server flexibility
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 # Register API routes
