@@ -72,8 +72,8 @@ class LLMClient:
         temperature: Optional[float] = None,
     ):
         self.base_url = (base_url or settings.default_base_url).rstrip("/")
-        # Ensure base_url ends with /v1 if missing
-        if not self.base_url.endswith("/v1") and not "/v1/" in self.base_url:
+        # Ensure base_url ends with /v1 if missing (unless already an OpenAI-compatible path like /openai)
+        if not (self.base_url.endswith("/v1") or "/v1/" in self.base_url or self.base_url.endswith("/openai")):
             self.base_url = f"{self.base_url}/v1"
 
         self.api_key = api_key or settings.default_api_key
@@ -92,9 +92,31 @@ class LLMClient:
         try:
             response = await self._client.models.list()
             model_ids = [m.id for m in response.data if m.id]
-            # Filter out non-chat models if obvious (e.g. embedding models)
-            chat_models = [m for m in model_ids if not "embed" in m.lower()]
-            return chat_models if chat_models else model_ids
+
+            # Filter out non-chat / non-completion models (embedding, live websocket, audio, image, etc.)
+            excluded_keywords = (
+                "embed", "live", "imagen", "image", "dall-e",
+                "tts", "whisper", "audio", "transcribe", "aqa", "realtime",
+            )
+            chat_models = []
+            for mid in model_ids:
+                clean_id = mid.removeprefix("models/") if mid.startswith("models/") else mid
+                mid_lower = clean_id.lower()
+                if not any(kw in mid_lower for kw in excluded_keywords):
+                    chat_models.append(clean_id)
+
+            if not chat_models:
+                chat_models = [m.removeprefix("models/") if m.startswith("models/") else m for m in model_ids]
+
+            # Sort intelligently: prioritize standard fast models (flash, instruct, chat) over experimental/preview
+            def model_priority(name: str) -> tuple:
+                n = name.lower()
+                is_flash = 0 if ("flash" in n and "preview" not in n and "exp" not in n) else 1
+                is_standard = 0 if ("preview" not in n and "exp" not in n and "custom" not in n) else 1
+                return (is_flash, is_standard, n)
+
+            chat_models.sort(key=model_priority)
+            return chat_models
         except Exception as e:
             logger.error(f"Error fetching models from {self.base_url}: {e}")
             raise
@@ -168,24 +190,36 @@ class LLMClient:
         active_model: str,
     ):
         """Call chat completions with assistant think-prefill for reasoning suppression, falling back if rejected."""
-        # Append empty think block to pre-emptively terminate reasoning on CoT models (Qwen 3.5, DeepSeek, etc.)
-        messages_with_prefill = list(messages) + [{"role": "assistant", "content": "<think>\n</think>"}]
+        # Pre-emptively terminate reasoning only on local CoT models (Qwen, DeepSeek, etc.)
+        # Cloud models (Gemini, GPT, Claude) do not use <think> tags and reject assistant-turn suffixes
+        is_cloud_model = any(k in active_model.lower() for k in ("gemini", "gpt-", "claude-"))
+        messages_to_send = list(messages)
+        if not is_cloud_model:
+            messages_to_send.append({"role": "assistant", "content": "<think>\n</think>"})
+
         try:
             return await self._client.chat.completions.create(
                 model=active_model,
-                messages=messages_with_prefill,
+                messages=messages_to_send,
                 temperature=self.temperature,
             )
         except Exception as e:
             err_str = str(e).lower()
-            # If server specifically rejects the trailing assistant role (e.g. strict OpenAI API), retry without prefill
-            if ("assistant" in err_str or "last message" in err_str) and not ("unloaded" in err_str or "aborted" in err_str):
-                logger.debug(f"API rejected assistant prefill ({e}); retrying with standard messages.")
-                return await self._client.chat.completions.create(
-                    model=active_model,
-                    messages=messages,
-                    temperature=self.temperature,
+            # If server rejected the assistant prefill (e.g. role ordering, alternating turns), retry without prefill
+            if not is_cloud_model:
+                is_unrecoverable = (
+                    "unloaded" in err_str
+                    or "aborted" in err_str
+                    or "not found" in err_str
+                    or "does not exist" in err_str
                 )
+                if not is_unrecoverable:
+                    logger.debug(f"API rejected assistant prefill ({e}); retrying with standard messages.")
+                    return await self._client.chat.completions.create(
+                        model=active_model,
+                        messages=messages,
+                        temperature=self.temperature,
+                    )
             raise
 
     async def correct_text(self, text: str, model_override: Optional[str] = None) -> str:

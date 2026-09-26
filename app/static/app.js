@@ -94,6 +94,20 @@ document.getElementById("infoModal").addEventListener("click", (e) => {
 
 function setPreset(url) {
   document.getElementById("serverUrl").value = url;
+  const keyField = document.getElementById("apiKey");
+  if (url.includes("googleapis.com")) {
+    if (!keyField.value || keyField.value === "not-needed") {
+      keyField.value = "";
+      keyField.placeholder = "Paste Gemini API key (AIzaSy...)";
+      keyField.focus();
+      updateConnectionBadge("checking", "Enter Gemini API Key");
+      return;
+    }
+  } else {
+    if (!keyField.value) {
+      keyField.value = "not-needed";
+    }
+  }
   fetchModels();
 }
 
