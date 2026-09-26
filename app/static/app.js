@@ -11,22 +11,39 @@ const INFO_DATA = {
     icon: "fa-solid fa-server",
     content: `
       <p>The HTTP address of your local or network OpenAI-compatible LLM server.</p>
-      <p class="font-semibold text-slate-700 mt-2">Common Defaults:</p>
+      <p class="font-semibold text-slate-700 mt-2">Supported Presets & Defaults:</p>
       <ul class="list-disc pl-4 space-y-1">
         <li><code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">http://localhost:1234/v1</code> &mdash; LM Studio default</li>
         <li><code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">http://localhost:11434/v1</code> &mdash; Ollama default</li>
-        <li><code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">http://localhost:8080/v1</code> &mdash; LocalAI / llama.cpp</li>
+        <li><code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">https://generativelanguage.googleapis.com/v1beta/openai/</code> &mdash; Google Gemini</li>
+        <li><code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">https://api.openai.com/v1</code> &mdash; ChatGPT (OpenAI)</li>
+        <li><code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">https://api.anthropic.com/v1</code> &mdash; Claude (Anthropic)</li>
       </ul>
       <p class="mt-2 text-slate-500">You can also specify remote LAN IP addresses (e.g., <code class="bg-slate-100 px-1 py-0.5 rounded">http://192.168.1.50:1234/v1</code>) if your model runs on another machine.</p>
     `
   },
   apiKey: {
-    title: "API Key (Optional)",
+    title: "API Key",
     icon: "fa-solid fa-key",
     content: `
       <p>Authentication token for your LLM server.</p>
       <p class="mt-1">Most local servers (like LM Studio and Ollama) do not require authentication. The placeholder <code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">not-needed</code> is passed by default to satisfy the OpenAI client specification.</p>
-      <p class="mt-2 text-slate-500">If connecting to a secured local gateway, vLLM instance with API keys, or remote endpoint, enter your secret key here.</p>
+      <p class="mt-3 text-slate-800 font-semibold text-xs uppercase tracking-wider">How to get an API key:</p>
+      <ul class="space-y-2 mt-2 text-xs">
+        <li class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div class="font-semibold text-slate-800">Google Gemini</div>
+          <div class="text-slate-600 mt-0.5">Generate a key in <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-medium hover:underline inline-flex items-center space-x-1"><span>Google AI Studio</span> <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>. Read the <a href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline">Gemini API Key Documentation</a>.</div>
+        </li>
+        <li class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div class="font-semibold text-slate-800">Anthropic Claude</div>
+          <div class="text-slate-600 mt-0.5">Generate a key in the <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-medium hover:underline inline-flex items-center space-x-1"><span>Anthropic Console</span> <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>. Read the <a href="https://docs.anthropic.com/en/docs/initial-setup" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline">Claude Setup Documentation</a>.</div>
+        </li>
+        <li class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div class="font-semibold text-slate-800">ChatGPT (OpenAI)</div>
+          <div class="text-slate-600 mt-0.5">Generate a secret key in the <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-medium hover:underline inline-flex items-center space-x-1"><span>OpenAI Platform</span> <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>. Read the <a href="https://platform.openai.com/docs/quickstart" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline">OpenAI Quickstart Guide</a>.</div>
+        </li>
+      </ul>
+      <p class="mt-2 text-slate-400 text-[11px]">API keys are stored strictly in memory for the duration of the request and are never written to disk.</p>
     `
   },
   modelSelect: {
@@ -95,12 +112,14 @@ document.getElementById("infoModal").addEventListener("click", (e) => {
 function setPreset(url) {
   document.getElementById("serverUrl").value = url;
   const keyField = document.getElementById("apiKey");
-  if (url.includes("googleapis.com")) {
+  const isCloud = url.startsWith("https://");
+
+  if (isCloud) {
     if (!keyField.value || keyField.value === "not-needed") {
       keyField.value = "";
-      keyField.placeholder = "Paste Gemini API key (AIzaSy...)";
+      keyField.placeholder = "Enter your API key";
       keyField.focus();
-      updateConnectionBadge("checking", "Enter Gemini API Key");
+      updateConnectionBadge("checking", "Enter API Key");
       return;
     }
   } else {

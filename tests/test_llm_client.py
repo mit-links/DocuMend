@@ -23,6 +23,16 @@ def test_base_url_normalization():
     c5 = LLMClient(base_url="https://generativelanguage.googleapis.com/v1beta/openai")
     assert c5.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
 
+    # ChatGPT (OpenAI)
+    c6 = LLMClient(base_url="https://api.openai.com/v1")
+    assert c6.base_url == "https://api.openai.com/v1"
+
+    # Claude (Anthropic)
+    c7 = LLMClient(base_url="https://api.anthropic.com/v1", api_key="sk-ant-test")
+    assert c7.base_url == "https://api.anthropic.com/v1"
+    assert c7._client.default_headers.get("anthropic-version") == "2023-06-01"
+    assert c7._client.default_headers.get("x-api-key") == "sk-ant-test"
+
 
 @pytest.mark.asyncio
 async def test_list_models_gemini_filtering_and_sorting():
@@ -79,6 +89,18 @@ async def test_call_chat_completions_cloud_vs_local():
     sent_msgs_gemini = client._client.chat.completions.create.call_args.kwargs["messages"]
     assert len(sent_msgs_gemini) == 1
     assert sent_msgs_gemini[0]["role"] == "user"
+
+    # Test cloud model: gpt-4o-mini -> must NOT append <think> assistant message
+    await client._call_chat_completions(messages, active_model="gpt-4o-mini")
+    sent_msgs_gpt = client._client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(sent_msgs_gpt) == 1
+    assert sent_msgs_gpt[0]["role"] == "user"
+
+    # Test cloud model: claude-3-5-haiku -> must NOT append <think> assistant message
+    await client._call_chat_completions(messages, active_model="claude-3-5-haiku-20241022")
+    sent_msgs_claude = client._client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(sent_msgs_claude) == 1
+    assert sent_msgs_claude[0]["role"] == "user"
 
     # Test local model: qwen2.5-7b -> must append <think> assistant message for reasoning suppression
     await client._call_chat_completions(messages, active_model="qwen2.5-7b-instruct")

@@ -84,13 +84,17 @@
             <input type="text" id="serverUrl" value="http://localhost:1234/v1" placeholder="http://localhost:1234/v1"
               class="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-slate-700 shadow-sm" />
           </div>
-          <div class="mt-1 flex items-center space-x-2">
+          <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
             <span class="text-[11px] text-slate-400">Presets:</span>
             <button type="button" onclick="setPreset('http://localhost:1234/v1')" class="text-[11px] text-indigo-600 hover:underline">LM Studio (:1234)</button>
             <span class="text-slate-300">•</span>
             <button type="button" onclick="setPreset('http://localhost:11434/v1')" class="text-[11px] text-indigo-600 hover:underline">Ollama (:11434)</button>
             <span class="text-slate-300">•</span>
             <button type="button" onclick="setPreset('https://generativelanguage.googleapis.com/v1beta/openai/')" class="text-[11px] text-indigo-600 hover:underline font-medium">Google Gemini</button>
+            <span class="text-slate-300">•</span>
+            <button type="button" onclick="setPreset('https://api.openai.com/v1')" class="text-[11px] text-indigo-600 hover:underline font-medium">ChatGPT</button>
+            <span class="text-slate-300">•</span>
+            <button type="button" onclick="setPreset('https://api.anthropic.com/v1')" class="text-[11px] text-indigo-600 hover:underline font-medium">Claude</button>
           </div>
         </div>
 
@@ -106,10 +110,10 @@
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
               <i class="fa-solid fa-key text-xs"></i>
             </div>
-            <input type="text" id="apiKey" value="not-needed" placeholder="Optional / not-needed"
+            <input type="text" id="apiKey" value="not-needed" placeholder="Enter API key or not-needed"
               class="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-slate-700 shadow-sm" />
           </div>
-          <p class="mt-1 text-[11px] text-slate-400">Default: not-needed</p>
+          <p class="mt-1 text-[11px] text-slate-400">Default: not-needed (local) or your provider API key</p>
         </div>
 
         <!-- Connect / Refresh Button -->
@@ -318,6 +322,6 @@
     </div>
   </footer>
 
-  <script src="/static/app.js?v=0.1.4"></script>
+  <script src="/static/app.js?v=0.1.5"></script>
 </body>
 </html>

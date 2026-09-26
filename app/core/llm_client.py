@@ -6,6 +6,7 @@ with multilingual prompt constraints and sanitization.
 
 import asyncio
 import logging
+import re
 import time
 from typing import List, Optional, Tuple
 from openai import AsyncOpenAI
@@ -81,10 +82,17 @@ class LLMClient:
         self.timeout = timeout or settings.request_timeout
         self.temperature = temperature if temperature is not None else settings.temperature
 
+        default_headers = {}
+        if "anthropic.com" in self.base_url:
+            default_headers["anthropic-version"] = "2023-06-01"
+            if self.api_key:
+                default_headers["x-api-key"] = self.api_key
+
         self._client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=self.api_key,
             timeout=self.timeout,
+            default_headers=default_headers or None,
         )
 
     async def list_models(self) -> List[str]:
@@ -108,12 +116,12 @@ class LLMClient:
             if not chat_models:
                 chat_models = [m.removeprefix("models/") if m.startswith("models/") else m for m in model_ids]
 
-            # Sort intelligently: prioritize standard fast models (flash, instruct, chat) over experimental/preview
+            # Sort intelligently: prioritize fast models (flash, mini, haiku) over experimental/preview
             def model_priority(name: str) -> tuple:
                 n = name.lower()
-                is_flash = 0 if ("flash" in n and "preview" not in n and "exp" not in n) else 1
+                is_fast = 0 if (re.search(r"\b(flash|mini|haiku)\b", n) and "preview" not in n and "exp" not in n) else 1
                 is_standard = 0 if ("preview" not in n and "exp" not in n and "custom" not in n) else 1
-                return (is_flash, is_standard, n)
+                return (is_fast, is_standard, n)
 
             chat_models.sort(key=model_priority)
             return chat_models
@@ -191,8 +199,8 @@ class LLMClient:
     ):
         """Call chat completions with assistant think-prefill for reasoning suppression, falling back if rejected."""
         # Pre-emptively terminate reasoning only on local CoT models (Qwen, DeepSeek, etc.)
-        # Cloud models (Gemini, GPT, Claude) do not use <think> tags and reject assistant-turn suffixes
-        is_cloud_model = any(k in active_model.lower() for k in ("gemini", "gpt-", "claude-"))
+        # Cloud models (Gemini, GPT, Claude, o1/o3) do not use <think> tags and reject assistant-turn suffixes
+        is_cloud_model = any(k in active_model.lower() for k in ("gemini", "gpt", "claude", "o1", "o3"))
         messages_to_send = list(messages)
         if not is_cloud_model:
             messages_to_send.append({"role": "assistant", "content": "<think>\n</think>"})
