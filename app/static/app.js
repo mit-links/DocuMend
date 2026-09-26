@@ -177,27 +177,32 @@ function setPreset(url) {
 }
 
 // Update connection status badge (top right header)
-function updateConnectionBadge(status, text) {
+function updateConnectionBadge(status, text = null) {
   const badge = document.getElementById("connectionBadge");
   const badgeText = document.getElementById("badgeText");
 
-  badgeText.textContent = text;
-
   if (status === "connected") {
+    const label = text || "Connected";
+    badgeText.textContent = label;
     badge.className = "flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 transition-colors";
     badge.title = "Connected to LLM server";
     badge.onclick = null;
-    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span id="badgeText">${text}</span>`;
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span id="badgeText">${label}</span>`;
   } else if (status === "checking") {
+    const label = text || "Connecting...";
+    badgeText.textContent = label;
     badge.className = "flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 transition-colors";
     badge.title = "Checking server connection...";
     badge.onclick = null;
-    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span><span id="badgeText">${text}</span>`;
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span><span id="badgeText">${label}</span>`;
   } else {
+    // Generic error message so the top-right status pill remains clean, compact, and never overflows
+    const label = "Connection Failed";
+    badgeText.textContent = label;
     badge.className = "flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 transition-colors cursor-pointer hover:bg-rose-100 hover:border-rose-300 shadow-sm";
-    badge.title = "Click to view full error details";
+    badge.title = "Connection failed — click to view full error details";
     badge.onclick = () => showLastErrorModal();
-    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span id="badgeText">${text}</span><i class="fa-solid fa-circle-question text-[11px] text-rose-500 ml-0.5"></i>`;
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span id="badgeText">${label}</span><i class="fa-solid fa-circle-info text-[11px] text-rose-500 ml-0.5"></i>`;
   }
 }
 
@@ -232,11 +237,11 @@ async function fetchModels(isUserClick = false) {
       checkCanStart();
     } else {
       modelSelect.innerHTML = '<option value="">No models found on server</option>';
-      const mainMsg = data.error || "No models found";
+      const mainMsg = data.error || "No models found on server";
       const fullDetails = data.raw_error || data.error || `Could not find any models on server at ${baseUrl}`;
       lastConnectionError = { main: mainMsg, details: fullDetails };
 
-      updateConnectionBadge("error", mainMsg);
+      updateConnectionBadge("error");
       checkCanStart();
 
       if (isUserClick) {
@@ -249,7 +254,7 @@ async function fetchModels(isUserClick = false) {
     const fullDetails = err.message || String(err);
     lastConnectionError = { main: mainMsg, details: fullDetails };
 
-    updateConnectionBadge("error", mainMsg);
+    updateConnectionBadge("error");
     checkCanStart();
 
     if (isUserClick) {
