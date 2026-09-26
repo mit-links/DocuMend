@@ -115,3 +115,35 @@ async def test_docx_processor_batch_fallback(tmp_path):
     assert "Hello, this is a test document" in para_texts[0]
 
 
+@pytest.mark.asyncio
+async def test_docx_processor_server_error_stops_immediately(tmp_path):
+    sample_file = tmp_path / "test.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    call_count = 0
+
+    class FailingLLMClient:
+        async def correct_batch(self, texts, model_override=None):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("LLM Server Error: Model is unloaded (engine aborted)")
+
+        async def correct_text(self, text: str, model_override=None) -> str:
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("LLM Server Error: Model is unloaded (engine aborted)")
+
+    failing_client = FailingLLMClient()
+    processor = DocxProcessor(llm_client=failing_client, concurrency_limit=2)
+
+    with pytest.raises(RuntimeError, match="Model is unloaded"):
+        await processor.process_document(docx_bytes=file_bytes)
+
+    # Ensure processing stopped fast without endlessly executing remaining batches/paragraphs
+    assert call_count <= 2
+
+
+

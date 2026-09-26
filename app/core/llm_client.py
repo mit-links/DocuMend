@@ -178,8 +178,8 @@ class LLMClient:
             )
         except Exception as e:
             err_str = str(e).lower()
-            # If server or API rejects assistant message at the end (e.g. strict OpenAI API), retry without prefill
-            if "assistant" in err_str or "role" in err_str or "400" in err_str:
+            # If server specifically rejects the trailing assistant role (e.g. strict OpenAI API), retry without prefill
+            if ("assistant" in err_str or "last message" in err_str) and not ("unloaded" in err_str or "aborted" in err_str):
                 logger.debug(f"API rejected assistant prefill ({e}); retrying with standard messages.")
                 return await self._client.chat.completions.create(
                     model=active_model,
@@ -207,7 +207,7 @@ class LLMClient:
             {"role": "user", "content": f"Text to correct:\n{stripped}"},
         ]
 
-        # Retry with exponential backoff on transient errors
+        # Retry transient network issues with backoff
         max_retries = 2
         last_error = None
 
@@ -239,15 +239,25 @@ class LLMClient:
 
             except Exception as e:
                 last_error = e
-                logger.warning(f"Inference attempt {attempt + 1} failed: {e}")
-                if attempt < max_retries:
-                    await asyncio.sleep(1.0 * (attempt + 1))
-                else:
-                    logger.error(f"Inference failed after {max_retries + 1} attempts: {last_error}")
-                    # Return original text on failure to prevent document corruption
-                    return text
+                # Check for unrecoverable client or server errors (model unloaded, aborted, invalid model)
+                err_str = str(e).lower()
+                is_fatal = (
+                    "unloaded" in err_str
+                    or "aborted" in err_str
+                    or "not found" in err_str
+                    or "does not exist" in err_str
+                    or "invalid_request_error" in err_str
+                    or "bad request" in err_str
+                )
 
-        return text
+                if is_fatal or attempt >= max_retries:
+                    logger.error(f"Inference failed (fatal={is_fatal}, attempt {attempt + 1}): {e}")
+                    raise RuntimeError(f"LLM Server Error: {last_error}") from last_error
+
+                logger.warning(f"Inference attempt {attempt + 1} failed: {e}. Retrying...")
+                await asyncio.sleep(1.0 * (attempt + 1))
+
+        raise RuntimeError(f"LLM Server Error: {last_error}")
 
     async def correct_batch(
         self,
@@ -258,6 +268,7 @@ class LLMClient:
 
         Returns (list_of_corrected_texts, completion_tokens, duration).
         If the batch cannot be cleanly parsed or items count mismatch, returns (None, tokens, duration).
+        Raises on server/API errors so the caller can abort immediately.
         """
         if not texts:
             return [], 0, 0.0
@@ -284,34 +295,28 @@ class LLMClient:
         ]
 
         start_call = time.time()
-        try:
-            response = await self._call_chat_completions(messages, active_model)
-            call_duration = time.time() - start_call
-            raw_content = response.choices[0].message.content or ""
+        response = await self._call_chat_completions(messages, active_model)
+        call_duration = time.time() - start_call
+        raw_content = response.choices[0].message.content or ""
 
-            completion_tokens = None
-            if getattr(response, "usage", None):
-                completion_tokens = response.usage.completion_tokens
+        completion_tokens = None
+        if getattr(response, "usage", None):
+            completion_tokens = response.usage.completion_tokens
 
-            parsed = parse_batched_output(raw_content, expected_count=len(texts))
-            if parsed is None:
-                logger.warning(
-                    f"Could not cleanly parse batched LLM output of {len(texts)} items. "
-                    f"Raw response: {raw_content[:200]}"
-                )
-                return None, completion_tokens, call_duration
+        parsed = parse_batched_output(raw_content, expected_count=len(texts))
+        if parsed is None:
+            logger.warning(
+                f"Could not cleanly parse batched LLM output of {len(texts)} items. "
+                f"Raw response: {raw_content[:200]}"
+            )
+            return None, completion_tokens, call_duration
 
-            # Reapply original leading and trailing whitespace to each item
-            final_items = []
-            for orig, corr in zip(texts, parsed):
-                cleaned = sanitize_llm_output(corr, original_text=orig.strip())
-                leading_ws = orig[: len(orig) - len(orig.lstrip())]
-                trailing_ws = orig[len(orig.rstrip()) :]
-                final_items.append(f"{leading_ws}{cleaned}{trailing_ws}")
+        # Reapply original leading and trailing whitespace to each item
+        final_items = []
+        for orig, corr in zip(texts, parsed):
+            cleaned = sanitize_llm_output(corr, original_text=orig.strip())
+            leading_ws = orig[: len(orig) - len(orig.lstrip())]
+            trailing_ws = orig[len(orig.rstrip()) :]
+            final_items.append(f"{leading_ws}{cleaned}{trailing_ws}")
 
-            return final_items, completion_tokens, call_duration
-
-        except Exception as e:
-            call_duration = time.time() - start_call
-            logger.warning(f"Batched inference failed: {e}")
-            return None, None, call_duration
+        return final_items, completion_tokens, call_duration

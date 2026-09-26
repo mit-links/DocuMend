@@ -115,22 +115,24 @@ class DocxProcessor:
         total_completion_tokens = 0
         total_gen_time = 0.0
 
+        stop_processing_event = asyncio.Event()
+
         async def process_single_paragraph(item_type: str, p: docx.text.paragraph.Paragraph):
             nonlocal processed_count, total_completion_tokens, total_gen_time
-            if cancel_check and cancel_check():
+            if stop_processing_event.is_set() or (cancel_check and cancel_check()):
                 return
 
             original_text = p.text
             snippet = (original_text[:60] + "...") if len(original_text) > 60 else original_text
 
             async with self.semaphore:
-                if cancel_check and cancel_check():
+                if stop_processing_event.is_set() or (cancel_check and cancel_check()):
                     return
 
                 call_start = time.time()
                 try:
                     res = await self.llm_client.correct_text(original_text, model_override=model_override)
-                    if cancel_check and cancel_check():
+                    if stop_processing_event.is_set() or (cancel_check and cancel_check()):
                         return
 
                     corrected_text = str(res)
@@ -142,26 +144,26 @@ class DocxProcessor:
                     total_gen_time += dur
 
                     update_paragraph_with_corrected_text(p, corrected_text)
+                    processed_count += 1
+                    if progress_callback:
+                        progress_callback(
+                            processed_count,
+                            total_count,
+                            snippet,
+                            processed_count >= total_count,
+                        )
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
+                    stop_processing_event.set()
                     if cancel_check and cancel_check():
                         return
-                    logger.error(f"Error processing item snippet '{snippet}': {e}")
-                finally:
-                    if not (cancel_check and cancel_check()):
-                        processed_count += 1
-                        if progress_callback:
-                            progress_callback(
-                                processed_count,
-                                total_count,
-                                snippet,
-                                processed_count >= total_count,
-                            )
+                    logger.error(f"Fatal error processing item snippet '{snippet}': {e}")
+                    raise
 
         async def process_batch(batch: List[Tuple[str, docx.text.paragraph.Paragraph]]):
             nonlocal processed_count, total_completion_tokens, total_gen_time
-            if cancel_check and cancel_check():
+            if stop_processing_event.is_set() or (cancel_check and cancel_check()):
                 return
 
             if len(batch) == 1:
@@ -174,14 +176,10 @@ class DocxProcessor:
             batch_desc = f"batch of {len(batch)} items: '{first_snippet}'"
 
             async with self.semaphore:
-                if cancel_check and cancel_check():
+                if stop_processing_event.is_set() or (cancel_check and cancel_check()):
                     return
 
                 call_start = time.time()
-                corrected_texts = None
-                tokens = None
-                dur = 0.0
-
                 try:
                     corrected_texts, tokens, dur = await self.llm_client.correct_batch(
                         texts, model_override=model_override
@@ -189,13 +187,16 @@ class DocxProcessor:
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    logger.warning(f"Batch correction failed for {batch_desc}: {e}. Falling back to single items.")
+                    # Model/server failure during batch: immediately halt pipeline
+                    stop_processing_event.set()
+                    logger.error(f"Fatal server failure during {batch_desc}: {e}")
+                    raise
 
                 if tokens is not None:
                     total_completion_tokens += tokens
                 total_gen_time += dur
 
-                if cancel_check and cancel_check():
+                if stop_processing_event.is_set() or (cancel_check and cancel_check()):
                     return
 
                 if corrected_texts is not None and len(corrected_texts) == len(batch):
@@ -211,15 +212,23 @@ class DocxProcessor:
                                 processed_count >= total_count,
                             )
                 else:
-                    logger.info(f"Falling back to individual item processing for {batch_desc}")
+                    # Fallback to individual items only for formatting discrepancies
+                    logger.info(f"Batched formatting mismatch; falling back to individual items for {batch_desc}")
                     for item_type, p in batch:
-                        if cancel_check and cancel_check():
+                        if stop_processing_event.is_set() or (cancel_check and cancel_check()):
                             return
                         await process_single_paragraph(item_type, p)
 
         # Process batches concurrently within semaphore bounds
-        tasks = [process_batch(b) for b in batches]
-        await asyncio.gather(*tasks)
+        tasks = [asyncio.create_task(process_batch(b)) for b in batches]
+        try:
+            await asyncio.gather(*tasks)
+        except Exception:
+            stop_processing_event.set()
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            raise
 
         if cancel_check and cancel_check():
             raise asyncio.CancelledError("Document processing was cancelled.")

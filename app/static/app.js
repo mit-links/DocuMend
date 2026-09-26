@@ -301,6 +301,8 @@ async function startProcessing() {
   downloadSection.classList.add("hidden");
   const statsSection = document.getElementById("statsSection");
   if (statsSection) statsSection.classList.add("hidden");
+  const errorBanner = document.getElementById("errorBanner");
+  if (errorBanner) errorBanner.classList.add("hidden");
   progressCard.classList.remove("hidden");
   progressBar.style.width = "0%";
   progressBar.className = "bg-gradient-to-r from-indigo-500 to-violet-600 h-3 rounded-full transition-all duration-300";
@@ -335,9 +337,16 @@ async function startProcessing() {
 
   } catch (err) {
     progressStatus.textContent = "Error";
-    currentSnippetText.textContent = err.message;
+    currentSnippetText.textContent = "Upload failed.";
     progressSpinner.className = "fa-solid fa-triangle-exclamation text-rose-600";
     progressTitle.textContent = "Processing Failed";
+    progressBar.className = "bg-rose-500 h-3 rounded-full transition-all duration-300";
+    const errorBanner = document.getElementById("errorBanner");
+    const errorBannerText = document.getElementById("errorBannerText");
+    if (errorBanner && errorBannerText) {
+      errorBannerText.textContent = err.message;
+      errorBanner.classList.remove("hidden");
+    }
     if (stopBtn) stopBtn.classList.add("hidden");
     startBtn.disabled = false;
   }
@@ -448,9 +457,16 @@ function connectSSE(streamUrl) {
 
       } else if (data.status === "failed") {
         progressStatus.textContent = "Failed";
-        currentSnippetText.textContent = data.error || "An error occurred during processing.";
+        currentSnippetText.textContent = "Processing halted due to error.";
         progressSpinner.className = "fa-solid fa-circle-xmark text-rose-600";
-        progressTitle.textContent = "Processing Failed";
+        progressTitle.textContent = "Processing Stopped due to Error";
+        progressBar.className = "bg-rose-500 h-3 rounded-full transition-all duration-300";
+        const errorBanner = document.getElementById("errorBanner");
+        const errorBannerText = document.getElementById("errorBannerText");
+        if (errorBanner && errorBannerText) {
+          errorBannerText.textContent = data.error || "An error occurred during processing.";
+          errorBanner.classList.remove("hidden");
+        }
         if (stopBtn) stopBtn.classList.add("hidden");
         activeEventSource.close();
         startBtn.disabled = false;

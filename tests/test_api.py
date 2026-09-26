@@ -171,5 +171,44 @@ def test_get_job_details(tmp_path):
     assert missing_res.status_code == 404
 
 
+def test_format_error_message():
+    from app.api.routes import format_error_message
+
+    class MockOpenAIError(Exception):
+        def __init__(self, body):
+            self.body = body
+
+    # OpenAI-style nested dict error
+    err1 = MockOpenAIError({"error": {"message": "Engine protocol startup was aborted: Model was unloaded"}})
+    assert format_error_message(err1) == "Engine protocol startup was aborted: Model was unloaded"
+
+    # OpenAI-style string error
+    err2 = MockOpenAIError({"error": "Model unloaded"})
+    assert format_error_message(err2) == "Model unloaded"
+
+    # LLM Server Error prefix stripping
+    err3 = RuntimeError("LLM Server Error: Connection refused")
+    assert format_error_message(err3) == "Connection refused"
+
+    # Generic exception
+    err4 = ValueError("Invalid input")
+    assert format_error_message(err4) == "Invalid input"
+
+
+@pytest.mark.asyncio
+async def test_job_failure_reporting():
+    from app.api.job_manager import job_manager
+
+    job = await job_manager.create_job(filename="failing_doc.docx")
+    await job_manager.fail_job(job.job_id, "Engine protocol startup was aborted: Model was unloaded")
+
+    details_res = client.get(f"/api/jobs/{job.job_id}")
+    assert details_res.status_code == 200
+    data = details_res.json()
+    assert data["status"] == "failed"
+    assert data["error"] == "Engine protocol startup was aborted: Model was unloaded"
+
+
+
 
 

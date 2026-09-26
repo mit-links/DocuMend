@@ -152,12 +152,29 @@ async def _run_document_job(
         if job and not job.is_cancelled:
             await job_manager.cancel_job(job_id)
     except Exception as e:
-        if job and job.is_cancelled:
-            logger.info(f"[Job {job_id}] Processing ended due to cancellation: {e}")
-            return
         duration = time.time() - start_time
         logger.exception(f"[Job {job_id}] Processing failed after {duration:.2f}s: {e}")
-        await job_manager.fail_job(job_id, str(e))
+        error_msg = format_error_message(e)
+        await job_manager.fail_job(job_id, error_msg)
+
+
+def format_error_message(err: Exception) -> str:
+    """Format exceptions into clean, human-readable error messages for the user."""
+    # Check if OpenAI APIError / BadRequestError with JSON body
+    if hasattr(err, "body") and isinstance(err.body, dict):
+        err_obj = err.body.get("error")
+        if isinstance(err_obj, dict) and "message" in err_obj:
+            return err_obj["message"]
+        if isinstance(err_obj, str):
+            return err_obj
+
+    if hasattr(err, "message") and err.message:
+        return str(err.message)
+
+    err_str = str(err)
+    if "LLM Server Error: " in err_str:
+        err_str = err_str.split("LLM Server Error: ", 1)[-1].strip()
+    return err_str
 
 
 @router.post("/process")
@@ -236,6 +253,7 @@ async def get_job_details(job_id: str):
         "percent": job.progress_percent,
         "snippet": job.current_snippet,
         "stats": job.stats,
+        "error": job.error_message,
         "download_url": f"/api/jobs/{job.job_id}/download" if job.status == "completed" else None,
     }
 
@@ -277,6 +295,8 @@ async def stream_job_progress(job_id: str):
             initial_data["download_url"] = f"/api/jobs/{job.job_id}/download"
             if job.stats:
                 initial_data["stats"] = job.stats
+        elif job.status == "failed":
+            initial_data["error"] = job.error_message
         yield f"data: {json.dumps(initial_data)}\n\n"
 
         if job.status in ("completed", "failed", "cancelled"):
