@@ -100,14 +100,60 @@ function closeInfo() {
   document.getElementById("infoModal").classList.add("hidden");
 }
 
-// Close modal on escape key or backdrop click
+let lastConnectionError = null;
+
+function showErrorModal(title, summary, details) {
+  const modal = document.getElementById("errorModal");
+  if (!modal) return;
+  document.getElementById("errorModalTitle").textContent = title || "Connection Failed";
+  document.getElementById("errorModalSummary").textContent = summary || "An error occurred while connecting to the server.";
+  document.getElementById("errorModalDetails").textContent = details || summary || "No details available.";
+  const copyBtn = document.getElementById("copyBtnText");
+  if (copyBtn) copyBtn.textContent = "Copy Details";
+  modal.classList.remove("hidden");
+}
+
+function closeErrorModal() {
+  const modal = document.getElementById("errorModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function showLastErrorModal() {
+  if (lastConnectionError) {
+    showErrorModal("Connection Error", lastConnectionError.main, lastConnectionError.details);
+  }
+}
+
+function copyErrorDetails() {
+  const detailsEl = document.getElementById("errorModalDetails");
+  if (!detailsEl || !detailsEl.textContent) return;
+  navigator.clipboard.writeText(detailsEl.textContent).then(() => {
+    const copyBtn = document.getElementById("copyBtnText");
+    if (copyBtn) {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy Details"; }, 2000);
+    }
+  });
+}
+
+// Close modals on escape key or backdrop click
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeInfo();
+  if (e.key === "Escape") {
+    closeInfo();
+    closeErrorModal();
+  }
 });
 
 document.getElementById("infoModal").addEventListener("click", (e) => {
   if (e.target.id === "infoModal") closeInfo();
 });
+
+const errorModalElem = document.getElementById("errorModal");
+if (errorModalElem) {
+  errorModalElem.addEventListener("click", (e) => {
+    if (e.target.id === "errorModal") closeErrorModal();
+  });
+}
 
 function setPreset(url) {
   document.getElementById("serverUrl").value = url;
@@ -127,32 +173,36 @@ function setPreset(url) {
       keyField.value = "not-needed";
     }
   }
-  fetchModels();
+  fetchModels(true);
 }
 
-// Update connection status badge
+// Update connection status badge (top right header)
 function updateConnectionBadge(status, text) {
   const badge = document.getElementById("connectionBadge");
   const badgeText = document.getElementById("badgeText");
-  const statusDesc = document.getElementById("serverStatusDesc");
 
   badgeText.textContent = text;
-  if (statusDesc) statusDesc.textContent = text;
 
   if (status === "connected") {
     badge.className = "flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 transition-colors";
+    badge.title = "Connected to LLM server";
+    badge.onclick = null;
     badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span id="badgeText">${text}</span>`;
   } else if (status === "checking") {
     badge.className = "flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 transition-colors";
+    badge.title = "Checking server connection...";
+    badge.onclick = null;
     badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span><span id="badgeText">${text}</span>`;
   } else {
-    badge.className = "flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 transition-colors";
-    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span id="badgeText">${text}</span>`;
+    badge.className = "flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 transition-colors cursor-pointer hover:bg-rose-100 hover:border-rose-300 shadow-sm";
+    badge.title = "Click to view full error details";
+    badge.onclick = () => showLastErrorModal();
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span id="badgeText">${text}</span><i class="fa-solid fa-circle-question text-[11px] text-rose-500 ml-0.5"></i>`;
   }
 }
 
 // Fetch models from LLM server via backend proxy
-async function fetchModels() {
+async function fetchModels(isUserClick = false) {
   const baseUrl = document.getElementById("serverUrl").value.trim();
   const apiKey = document.getElementById("apiKey").value.trim();
   const modelSelect = document.getElementById("modelSelect");
@@ -169,6 +219,7 @@ async function fetchModels() {
     const data = await response.json();
 
     if (data.status === "connected" && data.models && data.models.length > 0) {
+      lastConnectionError = null;
       modelSelect.innerHTML = "";
       data.models.forEach((m, idx) => {
         const opt = document.createElement("option");
@@ -181,14 +232,29 @@ async function fetchModels() {
       checkCanStart();
     } else {
       modelSelect.innerHTML = '<option value="">No models found on server</option>';
-      const errMsg = data.error ? (data.error.length > 40 ? data.error.slice(0, 40) + "..." : data.error) : "No models found";
-      updateConnectionBadge("error", `Server unreachable: ${errMsg}`);
+      const mainMsg = data.error || "No models found";
+      const fullDetails = data.raw_error || data.error || `Could not find any models on server at ${baseUrl}`;
+      lastConnectionError = { main: mainMsg, details: fullDetails };
+
+      updateConnectionBadge("error", mainMsg);
       checkCanStart();
+
+      if (isUserClick) {
+        showErrorModal("Connection Failed", mainMsg, fullDetails);
+      }
     }
   } catch (err) {
     modelSelect.innerHTML = '<option value="">Error connecting to server</option>';
-    updateConnectionBadge("error", "Connection error");
+    const mainMsg = "Connection error";
+    const fullDetails = err.message || String(err);
+    lastConnectionError = { main: mainMsg, details: fullDetails };
+
+    updateConnectionBadge("error", mainMsg);
     checkCanStart();
+
+    if (isUserClick) {
+      showErrorModal("Connection Failed", mainMsg, fullDetails);
+    }
   } finally {
     refreshIcon.classList.remove("fa-spin");
   }

@@ -187,12 +187,20 @@ def test_format_error_message():
     assert format_error_message(err2) == "Model unloaded"
 
     # LLM Server Error prefix stripping
-    err3 = RuntimeError("LLM Server Error: Connection refused")
-    assert format_error_message(err3) == "Connection refused"
+    err3 = RuntimeError("LLM Server Error: Request timed out")
+    assert format_error_message(err3) == "Request timed out"
 
-    # Generic exception
-    err4 = ValueError("Invalid input")
-    assert format_error_message(err4) == "Invalid input"
+    # Google Gemini style list body error
+    err5 = MockOpenAIError([{"error": {"code": 400, "message": "Please pass a valid API key", "status": "INVALID_ARGUMENT"}}])
+    assert format_error_message(err5) == "Please pass a valid API key"
+
+    # String with raw dict / json representation
+    err6 = Exception("Error code: 400 - [{'error': {'code': 400, 'message': 'Please pass a valid API key', 'status': 'INVALID_ARGUMENT'}}]")
+    assert format_error_message(err6) == "Please pass a valid API key"
+
+    # Connection refused
+    err7 = Exception("httpx.ConnectError: [Errno 111] Connection refused")
+    assert "Connection refused" in format_error_message(err7)
 
 
 @pytest.mark.asyncio
@@ -207,6 +215,18 @@ async def test_job_failure_reporting():
     data = details_res.json()
     assert data["status"] == "failed"
     assert data["error"] == "Engine protocol startup was aborted: Model was unloaded"
+
+
+def test_get_models_error_structure():
+    # Query an invalid/unreachable port
+    response = client.get("/api/models?base_url=http://127.0.0.1:59999/v1")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert "error" in data
+    assert "raw_error" in data
+    assert len(data["error"]) > 0
+
 
 
 

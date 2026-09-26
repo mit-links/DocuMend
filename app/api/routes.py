@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -37,11 +38,13 @@ async def get_available_models(
         }
     except Exception as e:
         logger.warning(f"Failed to query models from {target_url}: {e}")
+        main_message = format_error_message(e)
         return {
             "status": "error",
             "base_url": target_url,
             "models": [],
-            "error": str(e),
+            "error": main_message,
+            "raw_error": str(e),
         }
 
 
@@ -161,19 +164,35 @@ async def _run_document_job(
 def format_error_message(err: Exception) -> str:
     """Format exceptions into clean, human-readable error messages for the user."""
     # Check if OpenAI APIError / BadRequestError with JSON body
-    if hasattr(err, "body") and isinstance(err.body, dict):
-        err_obj = err.body.get("error")
-        if isinstance(err_obj, dict) and "message" in err_obj:
-            return err_obj["message"]
-        if isinstance(err_obj, str):
-            return err_obj
+    if hasattr(err, "body"):
+        body = err.body
+        if isinstance(body, list) and len(body) > 0:
+            body = body[0]
+        if isinstance(body, dict):
+            err_obj = body.get("error")
+            if isinstance(err_obj, dict) and "message" in err_obj:
+                return str(err_obj["message"]).strip()
+            if isinstance(err_obj, str):
+                return err_obj.strip()
 
     if hasattr(err, "message") and err.message:
-        return str(err.message)
+        return str(err.message).strip()
 
     err_str = str(err)
     if "LLM Server Error: " in err_str:
         err_str = err_str.split("LLM Server Error: ", 1)[-1].strip()
+
+    # Extract clean message if err_str contains JSON / dict like {'message': '...'}
+    match = re.search(r"['\"]message['\"]\s*:\s*['\"]([^'\"]+)['\"]", err_str)
+    if match:
+        return match.group(1).strip()
+
+    if "Connection refused" in err_str or "ConnectError" in err_str:
+        return "Connection refused: server is not reachable."
+
+    if "401" in err_str and ("unauthorized" in err_str.lower() or "api key" in err_str.lower()):
+        return "Unauthorized: Invalid API key."
+
     return err_str
 
 
