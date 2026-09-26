@@ -37,8 +37,11 @@ python -m venv .venv
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Start the application
+# 4. Start the application (default: port 8000)
 python -m app.main
+
+# Or specify a custom port
+python -m app.main --port 8080
 ```
 
 ### Linux / macOS (Bash)
@@ -55,11 +58,34 @@ source .venv/bin/activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Start the application
+# 4. Start the application (default: port 8000)
 python3 -m app.main
+
+# Or specify a custom port
+python3 -m app.main --port 8080
 ```
 
-Open your browser at **[http://localhost:8000](http://localhost:8000)**.
+Open your browser at **[http://localhost:8000](http://localhost:8000)** (or your specified port).
+
+---
+
+## Server CLI Options
+
+You can configure the server port, host, and reload mode via command-line arguments:
+
+| Option | Flag | Default | Description |
+|---|---|---|---|
+| `--port` | `-p` | `8000` | Port to bind the web server to |
+| `--host` | `-H` | `127.0.0.1` | Host address to bind to (`0.0.0.0` for LAN access) |
+| `--reload` | | `False` | Enable auto-reload for development |
+
+```bash
+# Example: bind to port 8080
+python -m app.main --port 8080
+
+# Example: allow network access on port 9000
+python -m app.main --host 0.0.0.0 --port 9000
+```
 
 ---
 

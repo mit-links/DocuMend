@@ -19,9 +19,9 @@ logger = logging.getLogger("documend")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("DocuMend server initialized. Ready at http://127.0.0.1:8000")
+    logger.info("DocuMend backend ready to receive requests.")
     yield
-    logger.info("DocuMend server shutting down.")
+    logger.info("DocuMend backend shutting down.")
 
 
 app = FastAPI(
@@ -58,6 +58,45 @@ async def serve_index():
     return {"message": "DocuMend API is running. Place index.html in app/static."}
 
 
-if __name__ == "__main__":
+def main():
+    """CLI entrypoint parsing arguments and starting Uvicorn server."""
+    import argparse
     import uvicorn
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    from app.config import settings
+
+    parser = argparse.ArgumentParser(
+        description="DocuMend: Local DOCX Grammar & Spell Checker",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=settings.port,
+        help="Port to bind the web server to (default: 8000)",
+    )
+    parser.add_argument(
+        "--host",
+        "-H",
+        type=str,
+        default=settings.host,
+        help="Host address to bind to (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        default=False,
+        help="Enable auto-reload for development",
+    )
+
+    args = parser.parse_args()
+
+    if not (1 <= args.port <= 65535):
+        parser.error(f"Port must be between 1 and 65535, got {args.port}")
+
+    logger.info(f"Starting DocuMend on http://{args.host}:{args.port}")
+    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=args.reload)
+
+
+if __name__ == "__main__":
+    main()

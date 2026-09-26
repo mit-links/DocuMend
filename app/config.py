@@ -19,6 +19,16 @@ class Settings(BaseSettings):
         description="Default model ID (if empty, auto-detected from server)",
     )
 
+    # Server settings
+    host: str = Field(
+        default="127.0.0.1",
+        description="Host address to bind the web server",
+    )
+    port: int = Field(
+        default=8000,
+        description="Port to bind the web server",
+    )
+
     # Inference settings
     concurrency_limit: int = Field(
         default=2,
