@@ -1,10 +1,5 @@
 # DocuMend
 
-[![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](https://opensource.org/licenses/MIT)
-[![Code Style: Google](https://img.shields.io/badge/code%20style-google-blue.svg)](https://google.github.io/styleguide/pyguide.html)
-[![Tests: Pytest](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://pytest.org/)
-
 A lightweight, privacy-first web application for automated grammar and spell checking of Microsoft Word (`.docx`) documents. Works with **any OpenAI-compatible LLM runtime**—including local engines (LM Studio, Ollama, vLLM, LocalAI) and commercial cloud APIs (Google Gemini, OpenAI ChatGPT, Anthropic Claude).
 
 DocuMend guarantees **strict formatting preservation**: inline bold, italic, underline, font families, font sizes, colors, subscripts, and superscripts are preserved across edits using sequence-matching character diffs.
