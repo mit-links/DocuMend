@@ -15,13 +15,15 @@ class JobState:
 
     job_id: str
     filename: str
-    status: str = "pending"  # "pending", "processing", "completed", "failed"
+    status: str = "pending"  # "pending", "processing", "completed", "failed", "cancelled"
     total_items: int = 0
     processed_items: int = 0
     current_snippet: str = ""
     error_message: Optional[str] = None
     result_bytes: Optional[bytes] = None
     stats: Optional[Dict[str, Any]] = None
+    is_cancelled: bool = False
+    task: Optional[asyncio.Task] = None
     created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
     events: asyncio.Queue = field(default_factory=asyncio.Queue)
 
@@ -63,7 +65,7 @@ class JobManager:
     ):
         """Update job progress and broadcast an SSE event."""
         job = await self.get_job(job_id)
-        if not job:
+        if not job or job.is_cancelled:
             return
 
         job.status = "completed" if is_complete else "processing"
@@ -89,7 +91,7 @@ class JobManager:
     ):
         """Mark job as successfully completed with final document bytes and stats."""
         job = await self.get_job(job_id)
-        if not job:
+        if not job or job.is_cancelled:
             return
 
         job.status = "completed"
@@ -107,10 +109,32 @@ class JobManager:
             "stats": stats,
         })
 
+    async def cancel_job(self, job_id: str) -> bool:
+        """Cancel a running job."""
+        job = await self.get_job(job_id)
+        if not job:
+            return False
+
+        if job.status in ("completed", "failed", "cancelled"):
+            return False
+
+        job.is_cancelled = True
+        job.status = "cancelled"
+
+        if job.task and not job.task.done():
+            job.task.cancel()
+
+        await job.events.put({
+            "job_id": job.job_id,
+            "status": "cancelled",
+            "message": "Processing was stopped by user.",
+        })
+        return True
+
     async def fail_job(self, job_id: str, error_message: str):
         """Mark job as failed with an error message."""
         job = await self.get_job(job_id)
-        if not job:
+        if not job or job.is_cancelled:
             return
 
         job.status = "failed"

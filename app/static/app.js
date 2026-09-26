@@ -2,6 +2,7 @@
 
 let selectedFile = null;
 let activeEventSource = null;
+let currentJobId = null;
 
 // Contextual help information for each input field
 const INFO_DATA = {
@@ -280,6 +281,7 @@ async function startProcessing() {
   }
 
   const startBtn = document.getElementById("startProcessBtn");
+  const stopBtn = document.getElementById("stopProcessBtn");
   const progressCard = document.getElementById("progressCard");
   const progressBar = document.getElementById("progressBar");
   const progressPercent = document.getElementById("progressPercent");
@@ -291,11 +293,17 @@ async function startProcessing() {
   const progressTitle = document.getElementById("progressTitle");
 
   startBtn.disabled = true;
+  if (stopBtn) {
+    stopBtn.classList.remove("hidden");
+    stopBtn.disabled = false;
+    stopBtn.innerHTML = '<i class="fa-solid fa-stop text-xs"></i><span>Stop</span>';
+  }
   downloadSection.classList.add("hidden");
   const statsSection = document.getElementById("statsSection");
   if (statsSection) statsSection.classList.add("hidden");
   progressCard.classList.remove("hidden");
   progressBar.style.width = "0%";
+  progressBar.className = "bg-gradient-to-r from-indigo-500 to-violet-600 h-3 rounded-full transition-all duration-300";
   progressPercent.textContent = "0%";
   progressCounter.textContent = "Uploading document...";
   progressStatus.textContent = "Uploading...";
@@ -322,6 +330,7 @@ async function startProcessing() {
     }
 
     const job = await res.json();
+    currentJobId = job.job_id;
     connectSSE(job.stream_url);
 
   } catch (err) {
@@ -329,6 +338,7 @@ async function startProcessing() {
     currentSnippetText.textContent = err.message;
     progressSpinner.className = "fa-solid fa-triangle-exclamation text-rose-600";
     progressTitle.textContent = "Processing Failed";
+    if (stopBtn) stopBtn.classList.add("hidden");
     startBtn.disabled = false;
   }
 }
@@ -349,6 +359,7 @@ function connectSSE(streamUrl) {
   const progressSpinner = document.getElementById("progressSpinner");
   const progressTitle = document.getElementById("progressTitle");
   const startBtn = document.getElementById("startProcessBtn");
+  const stopBtn = document.getElementById("stopProcessBtn");
 
   activeEventSource = new EventSource(streamUrl);
 
@@ -373,6 +384,7 @@ function connectSSE(streamUrl) {
         currentSnippetText.textContent = "Document formatting preserved and updated successfully.";
         progressSpinner.className = "fa-solid fa-circle-check text-emerald-600";
         progressTitle.textContent = "Correction Completed!";
+        if (stopBtn) stopBtn.classList.add("hidden");
 
         // Display performance stats if provided
         if (data.stats) {
@@ -412,11 +424,22 @@ function connectSSE(streamUrl) {
         activeEventSource.close();
         startBtn.disabled = false;
 
+      } else if (data.status === "cancelled") {
+        progressStatus.textContent = "Cancelled";
+        currentSnippetText.textContent = data.message || "Processing was stopped by user.";
+        progressSpinner.className = "fa-solid fa-ban text-amber-600";
+        progressTitle.textContent = "Processing Stopped";
+        progressBar.className = "bg-amber-500 h-3 rounded-full transition-all duration-300";
+        if (stopBtn) stopBtn.classList.add("hidden");
+        activeEventSource.close();
+        startBtn.disabled = false;
+
       } else if (data.status === "failed") {
         progressStatus.textContent = "Failed";
         currentSnippetText.textContent = data.error || "An error occurred during processing.";
         progressSpinner.className = "fa-solid fa-circle-xmark text-rose-600";
         progressTitle.textContent = "Processing Failed";
+        if (stopBtn) stopBtn.classList.add("hidden");
         activeEventSource.close();
         startBtn.disabled = false;
       }
@@ -428,6 +451,36 @@ function connectSSE(streamUrl) {
   activeEventSource.onerror = (err) => {
     console.warn("SSE connection error", err);
   };
+}
+
+// Stop ongoing document processing
+async function stopProcessing() {
+  if (!currentJobId) return;
+
+  const stopBtn = document.getElementById("stopProcessBtn");
+  const progressStatus = document.getElementById("progressStatus");
+  const currentSnippetText = document.getElementById("currentSnippetText");
+
+  if (stopBtn) {
+    stopBtn.disabled = true;
+    stopBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xs"></i><span>Stopping...</span>';
+  }
+  if (progressStatus) {
+    progressStatus.textContent = "Stopping...";
+  }
+  if (currentSnippetText) {
+    currentSnippetText.textContent = "Stopping document pipeline and cancelling pending requests...";
+  }
+
+  try {
+    const res = await fetch(`/api/jobs/${currentJobId}/cancel`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    console.info("Job cancellation result:", data);
+  } catch (err) {
+    console.error("Failed to cancel job:", err);
+  }
 }
 
 // Initial connection check on page load

@@ -96,3 +96,34 @@ def test_eject_models_endpoint():
     assert data["status"] in ("ok", "ignored")
     assert isinstance(data["ejected"], list)
 
+
+def test_cancel_nonexistent_job():
+    response = client.post("/api/jobs/nonexistent123/cancel")
+    assert response.status_code == 404
+
+
+def test_cancel_active_job(tmp_path):
+    sample_file = tmp_path / "sample.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    files = {"file": ("sample.docx", io.BytesIO(file_bytes), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    res = client.post("/api/process", files=files, data={"concurrency": "1"})
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+
+    # Cancel the job
+    cancel_res = client.post(f"/api/jobs/{job_id}/cancel")
+    assert cancel_res.status_code == 200
+    cancel_data = cancel_res.json()
+    assert cancel_data["job_id"] == job_id
+    assert cancel_data["status"] == "cancelled"
+
+    # Attempting to download cancelled job must return 400
+    dl_res = client.get(f"/api/jobs/{job_id}/download")
+    assert dl_res.status_code == 400
+    assert "cancelled" in dl_res.json()["detail"].lower()
+
+

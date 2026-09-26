@@ -123,12 +123,23 @@ async def _run_document_job(
             )
         )
 
+    job = await job_manager.get_job(job_id)
+
     try:
+        if job and job.is_cancelled:
+            logger.info(f"[Job {job_id}] Processing aborted before start because job was cancelled.")
+            return
+
         corrected_bytes, stats = await processor.process_document(
             docx_bytes=file_bytes,
             model_override=model,
             progress_callback=on_progress,
+            cancel_check=lambda: (job.is_cancelled if job else False),
         )
+        if job and job.is_cancelled:
+            logger.info(f"[Job {job_id}] Processing halted because job was cancelled.")
+            return
+
         duration = time.time() - start_time
         logger.info(
             f"[Job {job_id}] Document successfully corrected in {duration:.2f}s "
@@ -137,7 +148,14 @@ async def _run_document_job(
             + ")."
         )
         await job_manager.complete_job(job_id, corrected_bytes, stats=stats)
+    except asyncio.CancelledError:
+        logger.info(f"[Job {job_id}] Processing task was cancelled.")
+        if job and not job.is_cancelled:
+            await job_manager.cancel_job(job_id)
     except Exception as e:
+        if job and job.is_cancelled:
+            logger.info(f"[Job {job_id}] Processing ended due to cancellation: {e}")
+            return
         duration = time.time() - start_time
         logger.exception(f"[Job {job_id}] Processing failed after {duration:.2f}s: {e}")
         await job_manager.fail_job(job_id, str(e))
@@ -177,8 +195,8 @@ async def process_document(
         f"Server: {base_url or settings.default_base_url}, Model: '{model or 'auto'}', Concurrency: {concurrency or settings.concurrency_limit}"
     )
 
-    # Launch background processing pipeline
-    asyncio.create_task(
+    # Launch background processing pipeline and attach task to job
+    task = asyncio.create_task(
         _run_document_job(
             job_id=job.job_id,
             file_bytes=content,
@@ -188,12 +206,29 @@ async def process_document(
             concurrency=concurrency,
         )
     )
+    job.task = task
 
     return {
         "job_id": job.job_id,
         "filename": job.filename,
         "status": "pending",
         "stream_url": f"/api/jobs/{job.job_id}/stream",
+    }
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job_endpoint(job_id: str):
+    """Cancel an ongoing document processing job."""
+    job = await job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    success = await job_manager.cancel_job(job_id)
+    logger.info(f"[Job {job_id}] Cancellation requested by user. Result: {success}")
+    return {
+        "job_id": job_id,
+        "status": job.status,
+        "success": success,
     }
 
 
@@ -220,7 +255,7 @@ async def stream_job_progress(job_id: str):
                 initial_data["stats"] = job.stats
         yield f"data: {json.dumps(initial_data)}\n\n"
 
-        if job.status in ("completed", "failed"):
+        if job.status in ("completed", "failed", "cancelled"):
             return
 
         while True:
@@ -228,7 +263,7 @@ async def stream_job_progress(job_id: str):
                 # Wait for next event with a periodic heartbeat
                 event = await asyncio.wait_for(job.events.get(), timeout=15.0)
                 yield f"data: {json.dumps(event)}\n\n"
-                if event.get("status") in ("completed", "failed"):
+                if event.get("status") in ("completed", "failed", "cancelled"):
                     break
             except asyncio.TimeoutError:
                 # Send SSE comment to keep connection alive
@@ -253,6 +288,9 @@ async def download_processed_document(job_id: str):
     job = await job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Document processing was cancelled.")
 
     if job.status != "completed" or not job.result_bytes:
         raise HTTPException(status_code=400, detail="Document processing is not yet completed.")

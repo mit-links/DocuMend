@@ -46,6 +46,7 @@ class DocxProcessor:
         docx_bytes: bytes,
         model_override: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int, str, bool], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> Tuple[bytes, Dict[str, Any]]:
         """Process a DOCX document in-place and return (updated_bytes, stats_dict)."""
         start_time = time.time()
@@ -83,13 +84,22 @@ class DocxProcessor:
 
         async def process_single_item(item_type: str, p: docx.text.paragraph.Paragraph):
             nonlocal processed_count, total_completion_tokens, total_gen_time
+            if cancel_check and cancel_check():
+                return
+
             original_text = p.text
             snippet = (original_text[:60] + "...") if len(original_text) > 60 else original_text
 
             async with self.semaphore:
+                if cancel_check and cancel_check():
+                    return
+
                 call_start = time.time()
                 try:
                     res = await self.llm_client.correct_text(original_text, model_override=model_override)
+                    if cancel_check and cancel_check():
+                        return
+
                     corrected_text = str(res)
                     tokens = getattr(res, "completion_tokens", None)
                     dur = getattr(res, "duration", time.time() - call_start)
@@ -99,21 +109,29 @@ class DocxProcessor:
                     total_gen_time += dur
 
                     update_paragraph_with_corrected_text(p, corrected_text)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
+                    if cancel_check and cancel_check():
+                        return
                     logger.error(f"Error processing item snippet '{snippet}': {e}")
                 finally:
-                    processed_count += 1
-                    if progress_callback:
-                        progress_callback(
-                            processed_count,
-                            total_count,
-                            snippet,
-                            processed_count >= total_count,
-                        )
+                    if not (cancel_check and cancel_check()):
+                        processed_count += 1
+                        if progress_callback:
+                            progress_callback(
+                                processed_count,
+                                total_count,
+                                snippet,
+                                processed_count >= total_count,
+                            )
 
         # Process paragraphs concurrently within semaphore bounds
         tasks = [process_single_item(item_type, p) for item_type, p in processable]
         await asyncio.gather(*tasks)
+
+        if cancel_check and cancel_check():
+            raise asyncio.CancelledError("Document processing was cancelled.")
 
         elapsed_total = time.time() - start_time
         words_per_sec = round(total_words / elapsed_total, 1) if elapsed_total > 0 else 0.0

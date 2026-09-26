@@ -63,3 +63,24 @@ async def test_docx_processor_extraction_and_replacement(tmp_path):
     table = output_doc.tables[0]
     header_loc = table.rows[0].cells[1].paragraphs[0].text
     assert header_loc == "Location"  # "Locaton" corrected to "Location"
+
+
+@pytest.mark.asyncio
+async def test_docx_processor_cancellation(tmp_path):
+    import asyncio
+    sample_file = tmp_path / "test.docx"
+    generate_sample_docx(str(sample_file))
+
+    with open(sample_file, "rb") as f:
+        file_bytes = f.read()
+
+    mock_client = MockLLMClient()
+    processor = DocxProcessor(llm_client=mock_client, concurrency_limit=2)
+
+    # Cancel check returning True immediately
+    with pytest.raises(asyncio.CancelledError):
+        await processor.process_document(
+            docx_bytes=file_bytes,
+            cancel_check=lambda: True,
+        )
+
