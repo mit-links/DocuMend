@@ -262,3 +262,11 @@ async def test_download_filename_by_mode():
     assert res_suggest.status_code == 200
     assert 'filename="suggested_report.docx"' in res_suggest.headers["Content-Disposition"]
 
+
+def test_spool_max_size_configured():
+    import starlette.formparsers
+    from app.config import settings
+
+    assert settings.spool_max_size == 100 * 1024 * 1024
+    assert starlette.formparsers.MultiPartParser.spool_max_size == 100 * 1024 * 1024
+

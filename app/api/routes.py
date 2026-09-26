@@ -12,11 +12,15 @@ import zipfile
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
+import starlette.formparsers
 
 from app.api.job_manager import job_manager
 from app.config import settings
 from app.core.docx_processor import DocxProcessor
 from app.core.llm_client import LLMClient
+
+# Ensure Starlette multipart file uploads are buffered in RAM up to spool_max_size (100 MB)
+starlette.formparsers.MultiPartParser.spool_max_size = settings.spool_max_size
 
 logger = logging.getLogger("documend.api")
 

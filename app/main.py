@@ -10,10 +10,14 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+import starlette.formparsers
 import uvicorn
 
 from app.api.routes import router as api_router
 from app.config import settings
+
+# Configure Starlette multipart parser to buffer uploads up to 100 MB in RAM
+starlette.formparsers.MultiPartParser.spool_max_size = settings.spool_max_size
 
 # Configure centralized logging format
 logging.basicConfig(

@@ -133,6 +133,7 @@ All settings can be configured via environment variables or a `.env` file using 
 | `DOCUMEND_CONCURRENCY_LIMIT`| — | `1` | Number of simultaneous LLM requests |
 | `DOCUMEND_REQUEST_TIMEOUT` | — | `90.0` | Timeout per LLM call in seconds |
 | `DOCUMEND_TEMPERATURE` | — | `0.0` | Sampling temperature (0.0 for deterministic edits) |
+| `DOCUMEND_SPOOL_MAX_SIZE` | — | `104857600` (100 MB) | Max upload size buffered in RAM before disk spooling |
 
 ### CLI Options Example
 ```bash

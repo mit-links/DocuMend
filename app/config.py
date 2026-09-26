@@ -45,6 +45,12 @@ class Settings(BaseSettings):
         description="Sampling temperature for deterministic copyediting",
     )
 
+    # In-memory temporary file spool limit
+    spool_max_size: int = Field(
+        default=100 * 1024 * 1024,
+        description="Maximum in-memory spooled file size in bytes before spooling to disk (100 MB)",
+    )
+
     model_config = SettingsConfigDict(
         env_prefix="DOCUMEND_",
         env_file=".env",
