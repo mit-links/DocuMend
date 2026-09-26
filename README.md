@@ -9,8 +9,6 @@ A lightweight, local, and privacy-preserving web application for automated gramm
 - **Runtime-Agnostic:** Compatible with any local or remote OpenAI-compatible API (`/v1`). Pre-configured for LM Studio (`:1234`) and Ollama (`:11434`).
 - **Formatting Preservation:** Uses a token-level diff alignment engine (`difflib`) to preserve inline bold, italic, font styles, and colors even across edited text.
 - **Tables & Multilingual:** Checks body paragraphs and table cells while maintaining table layout and preserving original language (e.g., English, German, French) without unwanted translation.
-- **Real-time UX:** Server-Sent Events (SSE) stream live paragraph counters and snippet previews with automatic file download upon completion.
-- **Help Pop-ups:** Contextual information buttons `(i)` on every input field explaining expected values and common defaults.
 
 ---
 
