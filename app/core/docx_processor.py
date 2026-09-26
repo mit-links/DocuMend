@@ -28,6 +28,28 @@ class DocumentElement:
         """Returns the word count of the element."""
         return len(self.original_text.split())
 
+    def __iter__(self):
+        yield self.element_type
+        yield self.paragraph
+
+    def __getitem__(self, idx: int):
+        if idx == 0:
+            return self.element_type
+        if idx == 1:
+            return self.paragraph
+        raise IndexError("DocumentElement index out of range (0 or 1)")
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, tuple) and len(other) == 2:
+            return (self.element_type, self.paragraph) == other
+        if isinstance(other, DocumentElement):
+            return (
+                self.element_type == other.element_type
+                and self.paragraph == other.paragraph
+                and self.original_text == other.original_text
+            )
+        return False
+
 
 class DocxProcessor:
     """Handles parsing, batching, LLM correction, and in-place updating of DOCX documents."""
