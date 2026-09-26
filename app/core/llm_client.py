@@ -57,6 +57,7 @@ class LLMClient:
             response = await self._client.models.list()
             model_ids = [m.id for m in response.data if m.id]
             # Filter out non-chat models if obvious (e.g. embedding models)
+            chat_models = [m for m in model_ids if not "embed" in m.lower()]
             return chat_models if chat_models else model_ids
         except Exception as e:
             logger.error(f"Error fetching models from {self.base_url}: {e}")
