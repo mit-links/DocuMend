@@ -191,4 +191,14 @@ async def test_docx_processor_invalid_mode_raises():
         await processor.process_document(docx_bytes=file_bytes, mode="invalid_mode")
 
 
+def test_docx_processor_default_concurrency():
+    """Verify that DocxProcessor defaults to concurrency 1."""
+    from app.config import settings
+    assert settings.concurrency_limit == 1
+
+    processor = DocxProcessor(llm_client=MockLLMClient())
+    assert processor.concurrency_limit == 1
+    assert processor.semaphore._value == 1
+
+
 

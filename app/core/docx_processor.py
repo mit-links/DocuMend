@@ -55,12 +55,12 @@ class DocumentElement:
 class DocxProcessor:
     """Handles parsing, batching, LLM correction, and in-place updating of DOCX documents."""
 
-    def __init__(self, llm_client: LLMClient, concurrency_limit: int = 2) -> None:
+    def __init__(self, llm_client: LLMClient, concurrency_limit: int = 1) -> None:
         """Initializes the DocxProcessor.
 
         Args:
             llm_client: The LLM client used for text corrections.
-            concurrency_limit: Maximum number of concurrent LLM requests.
+            concurrency_limit: Maximum number of concurrent LLM requests (defaults to 1).
         """
         self.llm_client = llm_client
         self.concurrency_limit = concurrency_limit

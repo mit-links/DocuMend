@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # Inference settings
     concurrency_limit: int = Field(
-        default=2,
+        default=1,
         description="Maximum parallel requests to LLM server",
     )
     request_timeout: float = Field(

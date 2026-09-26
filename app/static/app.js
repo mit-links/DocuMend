@@ -74,11 +74,11 @@ const INFO_DATA = {
     icon: "fa-solid fa-sliders",
     content: `
       <p>Controls how many paragraphs are processed simultaneously by your LLM server.</p>
-      <p class="mt-1">Enter any <strong>positive integer</strong> &ge; 1 (pre-filled with <strong>2</strong>).</p>
+      <p class="mt-1">Enter any <strong>positive integer</strong> &ge; 1 (pre-filled with <strong>1</strong>).</p>
       <ul class="list-disc pl-4 space-y-1 mt-2">
-        <li><strong>1:</strong> Conservative & lowest VRAM usage. Ideal for CPU-only inference or smaller GPUs.</li>
-        <li><strong>2 (Recommended):</strong> Default balance between throughput and smooth local generation.</li>
-        <li><strong>3&ndash;8+:</strong> Faster throughput if your hardware (VRAM/Compute) can handle concurrent requests.</li>
+        <li><strong>1 (Recommended):</strong> Default conservative mode with lowest VRAM usage and most stable generation across CPU and GPU runtimes.</li>
+        <li><strong>2:</strong> Moderate balance between throughput and resource usage.</li>
+        <li><strong>3&ndash;8+:</strong> Faster throughput if your hardware (VRAM/Compute) or cloud API can handle concurrent requests.</li>
       </ul>
       <p class="mt-2 text-slate-500">Values less than 1 or non-integers will be rejected.</p>
     `

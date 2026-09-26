@@ -130,7 +130,7 @@ All settings can be configured via environment variables or a `.env` file using 
 | `DOCUMEND_DEFAULT_BASE_URL` | — | `http://localhost:1234/v1` | Default LLM server address |
 | `DOCUMEND_DEFAULT_API_KEY` | — | `not-needed` | Default API key |
 | `DOCUMEND_DEFAULT_MODEL` | — | `""` *(Auto-detect)* | Default model ID |
-| `DOCUMEND_CONCURRENCY_LIMIT`| — | `2` | Number of simultaneous LLM requests |
+| `DOCUMEND_CONCURRENCY_LIMIT`| — | `1` | Number of simultaneous LLM requests |
 | `DOCUMEND_REQUEST_TIMEOUT` | — | `90.0` | Timeout per LLM call in seconds |
 | `DOCUMEND_TEMPERATURE` | — | `0.0` | Sampling temperature (0.0 for deterministic edits) |
 
@@ -156,7 +156,7 @@ python -m app.main --host 0.0.0.0 --port 9000
 3. **Upload Document:**
    - Drag & drop any `.docx` file into the upload dropzone.
 4. **Set Concurrency:**
-   - Keep default `2` for local GPUs, or increase to `4-8` for cloud endpoints or multi-GPU servers.
+   - Keep default `1` for local GPUs, or increase to `2-8` for cloud endpoints or multi-GPU servers.
 5. **Start Correction:**
    - Click **Correct Document**. Real-time progress and live snippets display as items are verified.
    - To interrupt, click **Stop** at any time.

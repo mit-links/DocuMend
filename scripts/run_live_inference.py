@@ -33,7 +33,7 @@ async def main():
             row_texts = [cell.text.strip() for cell in row.cells]
             print(f"Table {t_idx+1} Row {r_idx+1}: {' | '.join(row_texts)}")
 
-    processor = DocxProcessor(llm_client=client, concurrency_limit=2)
+    processor = DocxProcessor(llm_client=client, concurrency_limit=1)
 
     def progress(processed, total, snippet, is_complete):
         print(f"Progress: [{processed}/{total}] {snippet} (complete={is_complete})")
