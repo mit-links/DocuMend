@@ -1,0 +1,195 @@
+"""FastAPI route handlers for DocuMend."""
+import asyncio
+import json
+import logging
+from typing import Optional
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response, StreamingResponse
+
+from app.api.job_manager import job_manager
+from app.config import settings
+from app.core.docx_processor import DocxProcessor
+from app.core.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api")
+
+
+@router.get("/models")
+async def get_available_models(
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+):
+    """Query available models from any OpenAI-compatible server."""
+    target_url = base_url or settings.default_base_url
+    target_key = api_key or settings.default_api_key
+
+    try:
+        client = LLMClient(base_url=target_url, api_key=target_key)
+        models = await client.list_models()
+        return {
+            "status": "connected",
+            "base_url": client.base_url,
+            "models": models,
+        }
+    except Exception as e:
+        logger.warning(f"Failed to query models from {target_url}: {e}")
+        return {
+            "status": "error",
+            "base_url": target_url,
+            "models": [],
+            "error": str(e),
+        }
+
+
+async def _run_document_job(
+    job_id: str,
+    file_bytes: bytes,
+    base_url: Optional[str],
+    api_key: Optional[str],
+    model: Optional[str],
+    concurrency: Optional[int],
+):
+    """Background task executing the document processing pipeline."""
+    client = LLMClient(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+    )
+    processor = DocxProcessor(
+        llm_client=client,
+        concurrency_limit=concurrency or settings.concurrency_limit,
+    )
+
+    def on_progress(processed: int, total: int, snippet: str, is_complete: bool):
+        asyncio.create_task(
+            job_manager.update_progress(
+                job_id=job_id,
+                processed=processed,
+                total=total,
+                snippet=snippet,
+                is_complete=is_complete,
+            )
+        )
+
+    try:
+        corrected_bytes = await processor.process_document(
+            docx_bytes=file_bytes,
+            model_override=model,
+            progress_callback=on_progress,
+        )
+        await job_manager.complete_job(job_id, corrected_bytes)
+    except Exception as e:
+        logger.exception(f"Job {job_id} encountered an error: {e}")
+        await job_manager.fail_job(job_id, str(e))
+
+
+@router.post("/process")
+async def process_document(
+    file: UploadFile = File(...),
+    base_url: Optional[str] = Form(None),
+    api_key: Optional[str] = Form(None),
+    model: Optional[str] = Form(None),
+    concurrency: Optional[int] = Form(None),
+):
+    """Upload a .docx file and initiate background spelling & grammar processing."""
+    if not file.filename.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only Microsoft Word (.docx) documents are supported.",
+        )
+
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    job = await job_manager.create_job(filename=file.filename)
+
+    # Launch background processing pipeline
+    asyncio.create_task(
+        _run_document_job(
+            job_id=job.job_id,
+            file_bytes=content,
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            concurrency=concurrency,
+        )
+    )
+
+    return {
+        "job_id": job.job_id,
+        "filename": job.filename,
+        "status": "pending",
+        "stream_url": f"/api/jobs/{job.job_id}/stream",
+    }
+
+
+@router.get("/jobs/{job_id}/stream")
+async def stream_job_progress(job_id: str):
+    """Server-Sent Events (SSE) endpoint streaming real-time progress for a job."""
+    job = await job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    async def event_generator():
+        # Emit initial state immediately
+        initial_data = {
+            "job_id": job.job_id,
+            "status": job.status,
+            "processed": job.processed_items,
+            "total": job.total_items,
+            "percent": job.progress_percent,
+            "snippet": job.current_snippet,
+        }
+        if job.status == "completed":
+            initial_data["download_url"] = f"/api/jobs/{job.job_id}/download"
+        yield f"data: {json.dumps(initial_data)}\n\n"
+
+        if job.status in ("completed", "failed"):
+            return
+
+        while True:
+            try:
+                # Wait for next event with a periodic heartbeat
+                event = await asyncio.wait_for(job.events.get(), timeout=15.0)
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("status") in ("completed", "failed"):
+                    break
+            except asyncio.TimeoutError:
+                # Send SSE comment to keep connection alive
+                yield ": heartbeat\n\n"
+            except asyncio.CancelledError:
+                break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/jobs/{job_id}/download")
+async def download_processed_document(job_id: str):
+    """Download the corrected .docx file."""
+    job = await job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job.status != "completed" or not job.result_bytes:
+        raise HTTPException(status_code=400, detail="Document processing is not yet completed.")
+
+    download_filename = f"corrected_{job.filename}"
+    return Response(
+        content=job.result_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{download_filename}"',
+            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+    )
