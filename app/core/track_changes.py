@@ -160,7 +160,7 @@ class RevisionManager:
             return rev_id
 
     def enable_track_revisions(self, doc: docx.Document) -> None:
-        """Configures document settings to enable Track Changes in Word and LibreOffice.
+        """Configures document settings to enable Track Changes in Word, LibreOffice, and Google Docs.
 
         Args:
             doc: The python-docx Document instance.

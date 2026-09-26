@@ -517,7 +517,7 @@ function connectSSE(streamUrl) {
         progressStatus.textContent = "Done!";
         const isSuggest = data.mode === "suggest" || (data.stats && data.stats.mode === "suggest");
         if (isSuggest) {
-          currentSnippetText.textContent = "Revisions saved as Word Track Changes. Open in Word or LibreOffice to review, accept, or reject suggestions.";
+          currentSnippetText.textContent = "Revisions saved as Track Changes. Open in Word, LibreOffice, or import into Google Docs to review, accept, or reject suggestions.";
           progressTitle.textContent = "Suggestions Completed!";
         } else {
           currentSnippetText.textContent = "Document formatting preserved and updated successfully.";
@@ -569,7 +569,7 @@ function connectSSE(streamUrl) {
         const downloadLabel = downloadSection.querySelector("div span");
         if (downloadLabel) {
           downloadLabel.textContent = isSuggest
-            ? "Suggestions ready! Open in Word or LibreOffice to accept/reject changes."
+            ? "Suggestions ready! Open in Word, LibreOffice, or Google Docs to accept/reject changes."
             : "Document successfully corrected and downloaded!";
         }
 
