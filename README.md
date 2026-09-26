@@ -13,15 +13,12 @@ DocuMend guarantees **strict formatting preservation**: inline bold, italic, und
 
 ## Key Features
 
-- **Runtime & Model Agnostic:** Connects to any local or remote OpenAI-compatible endpoint (`/v1`). One-click presets for **LM Studio**, **Ollama**, **Google Gemini**, **ChatGPT**, and **Claude**.
-- **Run-Level Style Preservation:** Uses `difflib.SequenceMatcher` to map text corrections directly back onto Word document runs, maintaining bold, italic, highlights, fonts, RGB/theme colors, sub/superscript, and strikethroughs even through sentence rewrites.
-- **Tables, Cell Grids & Bullet Lists:** Accurately extracts and corrects body paragraphs and table cells without altering document structure or column layouts (deduplicating merged cells).
-- **Multilingual Copyediting:** System prompts enforce strict copyediting (spelling, punctuation, grammar) while strictly prohibiting unwanted language translation.
-- **Reasoning Suppression:** Automatically injects assistant prefill tokens for local reasoning models (Qwen 2.5, DeepSeek R1) to bypass `<think>` tags and maximize throughput, while automatically stripping any residual think tags.
-- **Dynamic Micro-Batching:** Groups consecutive paragraphs by count (max 6) and word count (max 250 words) to accelerate processing up to 300% with automatic fallback to single-item mode.
-- **VRAM Auto-Ejection:** Automatically unloads inactive models from LM Studio and Ollama to prevent out-of-memory errors on consumer GPUs.
-- **Zero Disk Footprint:** Documents are processed in-memory via memory buffers (`io.BytesIO`). Uploaded files are immediately unlinked from disk upon ingestion.
-- **Live SSE Progress & Performance Telemetry:** Real-time Server-Sent Events (SSE) stream progress percentage, current text snippet, words-per-second, and tokens-per-second.
+- **Model & Provider Agnostic:** Works with any local or remote OpenAI-compatible endpoint (`/v1`), with built-in presets for **LM Studio**, **Ollama**, **Google Gemini**, **ChatGPT**, and **Claude**.
+- **Formatting Preservation:** Keeps inline styles intact—including bold, italics, underlines, font families, sizes, colors, subscripts, and superscripts.
+- **Full Document Coverage:** Accurately corrects body paragraphs, bullet lists, and tables without altering document layouts.
+- **Multilingual Copyediting:** Focuses strictly on spelling, grammar, and punctuation while preserving the original language without translation.
+- **Fast & Responsive:** Parallel processing and dynamic batching accelerate throughput, with automatic GPU memory management for local runtimes.
+- **Privacy First:** Documents are processed in-memory with zero disk footprint, and remote API keys are never written to disk.
 
 ---
 
