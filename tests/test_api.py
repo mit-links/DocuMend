@@ -13,6 +13,7 @@ def test_index_page():
     assert "DocuMend" in response.text
     assert "Server Base URL" in response.text
     assert "LLM Server & Model Settings" in response.text
+    assert 'type="text" id="apiKey"' in response.text
 
 
 def test_get_models_endpoint():
