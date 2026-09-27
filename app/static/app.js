@@ -73,7 +73,6 @@ const INFO_DATA = {
     icon: "fa-solid fa-sliders",
     content: `
       <p>Controls how many paragraphs are processed simultaneously by your LLM server.</p>
-      <p class="mt-1">Enter any <strong>positive integer</strong> &ge; 1 (pre-filled with <strong>1</strong>).</p>
       <ul class="list-disc pl-4 space-y-1 mt-2">
         <li><strong>1 (Recommended):</strong> Default conservative mode with lowest VRAM usage and most stable generation across CPU and GPU runtimes.</li>
         <li><strong>2:</strong> Moderate balance between throughput and resource usage.</li>
