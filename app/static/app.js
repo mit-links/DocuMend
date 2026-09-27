@@ -430,7 +430,7 @@ async function startProcessing() {
   progressPercent.textContent = "0%";
   progressCounter.textContent = "Uploading document...";
   progressStatus.textContent = "Uploading...";
-  currentSnippetText.textContent = "Initializing... This can take a while if a new model is loaded";
+  currentSnippetText.textContent = "Connecting to server and preparing document... This might take a while if a new model is loaded";
   progressSpinner.className = "fa-solid fa-spinner fa-spin text-indigo-600";
   progressTitle.textContent = "Processing Document...";
 
@@ -458,11 +458,12 @@ async function startProcessing() {
 
     const job = await res.json();
     currentJobId = job.job_id;
+    currentSnippetText.textContent = "Parsing document and waiting for pipeline...";
     connectSSE(job.stream_url);
 
   } catch (err) {
-    progressStatus.textContent = "Error";
-    currentSnippetText.textContent = "Upload failed.";
+    progressStatus.textContent = "Failed";
+    currentSnippetText.textContent = "Document upload failed.";
     progressSpinner.className = "fa-solid fa-triangle-exclamation text-rose-600";
     progressTitle.textContent = "Processing Failed";
     progressBar.className = "bg-rose-500 h-3 rounded-full transition-all duration-300";
@@ -500,29 +501,29 @@ function connectSSE(streamUrl) {
   activeEventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      const isSuggest = data.mode === "suggest" || (data.stats && data.stats.mode === "suggest");
 
       if (data.status === "processing" || data.status === "pending") {
         const percent = data.percent || 0;
         progressBar.style.width = `${percent}%`;
         progressPercent.textContent = `${percent}%`;
-        progressCounter.textContent = `Processing item ${data.processed} of ${data.total}`;
-        progressStatus.textContent = "Correcting text...";
+        progressCounter.textContent = data.total > 0
+          ? `Processing item ${data.processed} of ${data.total}`
+          : "Preparing document...";
+        progressStatus.textContent = isSuggest ? "Generating suggestions..." : "Correcting text...";
         if (data.snippet) {
           currentSnippetText.textContent = data.snippet;
         }
       } else if (data.status === "completed") {
         progressBar.style.width = "100%";
         progressPercent.textContent = "100%";
-        progressCounter.textContent = `Completed ${data.total} items`;
-        progressStatus.textContent = "Done!";
-        const isSuggest = data.mode === "suggest" || (data.stats && data.stats.mode === "suggest");
-        if (isSuggest) {
-          currentSnippetText.textContent = "Revisions saved as Track Changes. Open in Word, LibreOffice, or import into Google Docs to review, accept, or reject suggestions.";
-          progressTitle.textContent = "Suggestions Completed!";
-        } else {
-          currentSnippetText.textContent = "Document formatting preserved and updated successfully.";
-          progressTitle.textContent = "Correction Completed!";
-        }
+        progressCounter.textContent = `All ${data.total} items completed`;
+        progressStatus.textContent = "Completed";
+        progressSpinner.className = "fa-solid fa-circle-check text-emerald-600";
+        progressTitle.textContent = isSuggest ? "Suggestions Complete" : "Correction Complete";
+        currentSnippetText.textContent = isSuggest
+          ? "All suggestions saved as Track Changes. Ready for download."
+          : "All corrections applied with original formatting preserved.";
         if (stopBtn) stopBtn.classList.add("hidden");
 
         // Display performance stats
@@ -593,8 +594,8 @@ function connectSSE(streamUrl) {
         startBtn.disabled = false;
 
       } else if (data.status === "cancelled") {
-        progressStatus.textContent = "Cancelled";
-        currentSnippetText.textContent = data.message || "Processing was stopped by user.";
+        progressStatus.textContent = "Stopped";
+        currentSnippetText.textContent = data.message || "Processing stopped by user.";
         progressSpinner.className = "fa-solid fa-ban text-amber-600";
         progressTitle.textContent = "Processing Stopped";
         progressBar.className = "bg-amber-500 h-3 rounded-full transition-all duration-300";
@@ -604,9 +605,9 @@ function connectSSE(streamUrl) {
 
       } else if (data.status === "failed") {
         progressStatus.textContent = "Failed";
-        currentSnippetText.textContent = "Processing halted due to error.";
+        currentSnippetText.textContent = "Processing halted due to an error.";
         progressSpinner.className = "fa-solid fa-circle-xmark text-rose-600";
-        progressTitle.textContent = "Processing Stopped due to Error";
+        progressTitle.textContent = "Processing Failed";
         progressBar.className = "bg-rose-500 h-3 rounded-full transition-all duration-300";
         const errorBanner = document.getElementById("errorBanner");
         const errorBannerText = document.getElementById("errorBannerText");
@@ -641,7 +642,7 @@ function connectSSE(streamUrl) {
             }
             progressStatus.textContent = "Failed";
             progressSpinner.className = "fa-solid fa-circle-xmark text-rose-600";
-            progressTitle.textContent = "Processing Stopped due to Error";
+            progressTitle.textContent = "Processing Failed";
             progressBar.className = "bg-rose-500 h-3 rounded-full transition-all duration-300";
             if (stopBtn) stopBtn.classList.add("hidden");
             startBtn.disabled = false;
@@ -675,7 +676,7 @@ async function stopProcessing() {
     progressStatus.textContent = "Stopping...";
   }
   if (currentSnippetText) {
-    currentSnippetText.textContent = "Stopping document pipeline and cancelling pending requests...";
+    currentSnippetText.textContent = "Cancelling in-flight requests and stopping pipeline...";
   }
 
   try {
@@ -688,7 +689,7 @@ async function stopProcessing() {
     console.error("Failed to cancel job:", err);
     if (stopBtn) {
       stopBtn.disabled = false;
-      stopBtn.innerHTML = '<i class="fa-solid fa-stop text-xs"></i><span>Stop Processing</span>';
+      stopBtn.innerHTML = '<i class="fa-solid fa-stop text-xs"></i><span>Stop</span>';
     }
     if (startBtn) {
       startBtn.disabled = false;
