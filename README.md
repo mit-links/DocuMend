@@ -1,6 +1,6 @@
 # DocuMend
 
-A lightweight, privacy-first web application for automated grammar and spell checking of Microsoft Word (`.docx`) documents. Works with **any OpenAI-compatible LLM runtime**—including local engines (LM Studio, Ollama, vLLM, LocalAI) and commercial cloud APIs (Google Gemini, OpenAI ChatGPT, Anthropic Claude).
+A lightweight, privacy-first web application for automated grammar and spell checking of Microsoft Word (`.docx`) documents using an OpenAI-compatible LLM. Works with **any OpenAI-compatible LLM runtime**—including local engines (LM Studio, Ollama, vLLM, LocalAI) and commercial cloud APIs (Google Gemini, OpenAI ChatGPT, Anthropic Claude).
 
 DocuMend guarantees **strict formatting preservation**: inline bold, italic, underline, font families, font sizes, colors, subscripts, and superscripts are preserved across edits using sequence-matching character diffs.
 
