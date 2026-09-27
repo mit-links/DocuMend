@@ -8,13 +8,13 @@ DocuMend guarantees **strict formatting preservation**: inline bold, italic, und
 
 ## Key Features
 
-- **Model & Provider Agnostic:** Works with any local or remote OpenAI-compatible endpoint (`/v1`), with built-in presets for **LM Studio**, **Ollama**, **Google Gemini**, **ChatGPT**, and **Claude**.
-- **Dual Output Modes:** Choose between **Direct Edit** (`edit`, ready-to-use in-place replacements) and **Suggestions** (`suggest`, standard Word Track Changes `<w:ins>` / `<w:del>` for review in Microsoft Word, LibreOffice Writer, or Google Docs).
+- **Model & Provider Agnostic:** Works with *any* local or remote server or proxy that implements the [OpenAI Chat Completions API specification](https://platform.openai.com/docs/api-reference/chat) (`/v1/chat/completions`), for example **LM Studio**, **Ollama**, **Google Gemini**, **ChatGPT**, and **Claude**.
+- **Dual Output Modes:** Choose between **Direct Edit** (ready-to-use in-place replacements) and **Suggestions** (standard Word Track Changes for review in Microsoft Word, LibreOffice Writer, or Google Docs).
 - **Formatting Preservation:** Keeps inline styles intact—including bold, italics, underlines, font families, sizes, colors, subscripts, and superscripts.
 - **Full Document Coverage:** Accurately corrects body paragraphs, bullet lists, and tables without altering document layouts.
 - **Multilingual Copyediting:** Focuses strictly on spelling, grammar, and punctuation while preserving the original language without translation.
 - **Fast & Responsive:** Parallel processing and dynamic batching accelerate throughput, with automatic GPU memory management for local runtimes.
-- **Privacy First:** When paired with a local LLM runtime, no document data is sent anywhere outside of the machine. Files are processed strictly in-memory with zero disk footprint, console logs omit text excerpts, and API keys are never written to disk.
+- **Privacy First:** When paired with a local LLM runtime, no document data is sent anywhere outside of the machine. Files are processed strictly in-memory with zero disk footprint (as long as the input file fits into memory), console logs omit text excerpts, and API keys are never written to disk.
 
 ---
 
@@ -54,7 +54,7 @@ DocuMend guarantees **strict formatting preservation**: inline bold, italic, und
 
 ## Provider Presets & Configuration
 
-DocuMend includes built-in presets accessible directly from the UI header:
+DocuMend connects to any endpoint adhering to the [OpenAI Chat Completions protocol](https://platform.openai.com/docs/api-reference/chat). For convenience, built-in presets for popular runtimes and cloud services are available for convenience:
 
 | Provider | Server Base URL | Default Port / Path | API Key Requirement |
 |---|---|---|---|
@@ -73,8 +73,8 @@ For cloud providers, requests are sent directly to the configured provider API; 
 ## Quickstart Setup
 
 ### Prerequisites
-- **Python:** 3.10, 3.11, or 3.12
-- **LLM Runtime:** [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.ai/), or a cloud API key.
+- **Python:** 3.10+
+- **LLM Runtime:** Any engine, server, or cloud service implementing the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) (`/v1/chat/completions`).
 
 ### Installation
 
