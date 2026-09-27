@@ -1,6 +1,6 @@
 # DocuMend
 
-A lightweight, privacy-first web application for automated grammar and spell checking of Microsoft Word (`.docx`) documents using an OpenAI-compatible LLM. Works with **any OpenAI-compatible LLM runtime**—including local engines (LM Studio, Ollama, vLLM, LocalAI) and commercial cloud APIs (Google Gemini, OpenAI ChatGPT, Anthropic Claude).
+A lightweight, privacy-first web application for automated grammar and spell checking of Microsoft Word (`.docx`) documents using an OpenAI-compatible LLM. Works with **any OpenAI-compatible LLM runtime**—including local engines (e.g. LM Studio, Ollama) and commercial cloud APIs (e.g. Gemini, ChatGPT, Claude).
 
 DocuMend guarantees **strict formatting preservation**: inline bold, italic, underline, font families, font sizes, colors, subscripts, and superscripts are preserved across edits using sequence-matching character diffs.
 
@@ -8,7 +8,7 @@ DocuMend guarantees **strict formatting preservation**: inline bold, italic, und
 
 ## Key Features
 
-- **Model & Provider Agnostic:** Works with *any* local or remote server or proxy that implements the [OpenAI Chat Completions API specification](https://platform.openai.com/docs/api-reference/chat) (`/v1/chat/completions`), for example **LM Studio**, **Ollama**, **Google Gemini**, **ChatGPT**, and **Claude**.
+- **Model & Provider Agnostic:** Works with *any* local or remote server or proxy that implements the [OpenAI Chat Completions API specification](https://platform.openai.com/docs/api-reference/chat) (`/v1/chat/completions`), for example **LM Studio**, **Ollama**, **Gemini**, **ChatGPT**, and **Claude**.
 - **Dual Output Modes:** Choose between **Direct Edit** (ready-to-use in-place replacements) and **Suggestions** (standard Word Track Changes for review in Microsoft Word, LibreOffice Writer, or Google Docs).
 - **Formatting Preservation:** Keeps inline styles intact—including bold, italics, underlines, font families, sizes, colors, subscripts, and superscripts.
 - **Full Document Coverage:** Accurately corrects body paragraphs, bullet lists, and tables without altering document layouts.
@@ -60,9 +60,9 @@ DocuMend connects to any endpoint adhering to the [OpenAI Chat Completions proto
 |---|---|---|---|
 | **LM Studio** *(Default)* | `http://localhost:1234/v1` | Port `1234` | Set to `not-needed` |
 | **Ollama** | `http://localhost:11434/v1` | Port `11434` | Set to `not-needed` |
-| **Google Gemini** | `https://generativelanguage.googleapis.com/v1beta/openai/` | HTTPS | Google AI Studio Key |
-| **ChatGPT (OpenAI)** | `https://api.openai.com/v1` | HTTPS | OpenAI API Key (`sk-...`) |
-| **Claude (Anthropic)** | `https://api.anthropic.com/v1` | HTTPS | Anthropic Console Key |
+| **Gemini** | `https://generativelanguage.googleapis.com/v1beta/openai/` | HTTPS | Google AI Studio Key |
+| **ChatGPT** | `https://api.openai.com/v1` | HTTPS | OpenAI API Key |
+| **Claude** | `https://api.anthropic.com/v1` | HTTPS | Anthropic Console Key |
 
 Local endpoints (LM Studio, Ollama) require no external internet connection—**no document data is sent anywhere outside of your machine**. Uploaded documents are buffered and edited in RAM (up to 100 MB) with zero temporary files written to disk, server logs do not output text excerpts, and cross-origin browser requests are blocked.
 
@@ -146,20 +146,20 @@ python -m app.main --host 0.0.0.0 --port 9000
 ## Usage Guide
 
 1. **Configure Connection:**
-   - Click a preset (e.g., **LM Studio** or **Google Gemini**).
+   - Click a preset.
    - Enter your API Key if using a cloud model.
    - Click **Connect & Fetch** to automatically discover available models.
 2. **Select Active Model:**
-   - Choose your preferred model from the dropdown (e.g., `Qwen2.5-7B-Instruct`, `gemini-1.5-flash`).
+   - Choose your preferred model from the dropdown.
 3. **Upload Document:**
    - Drag & drop any `.docx` file into the upload dropzone.
 4. **Set Concurrency:**
    - Keep default `1` for local GPUs, or increase to `2-8` for cloud endpoints or multi-GPU servers.
 5. **Start Correction:**
-   - Click **Correct Document**. Real-time progress and live snippets display as items are verified.
+   - Click **Correct Document**.
    - To interrupt, click **Stop** at any time.
 6. **Download:**
-   - Upon completion, your corrected document automatically downloads with all original formatting preserved.
+   - Upon completion, your corrected document automatically downloads.
 
 ---
 
