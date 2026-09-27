@@ -432,7 +432,7 @@ async function startProcessing() {
   progressPercent.textContent = "0%";
   progressCounter.textContent = "Uploading document...";
   progressStatus.textContent = "Uploading...";
-  currentSnippetText.textContent = "Connecting to server and preparing document... This might take a while if a new model is loaded";
+  currentSnippetText.textContent = "Connecting to server...";
   progressSpinner.className = "fa-solid fa-spinner fa-spin text-indigo-600";
   progressTitle.textContent = "Processing Document...";
 
@@ -460,7 +460,7 @@ async function startProcessing() {
 
     const job = await res.json();
     currentJobId = job.job_id;
-    currentSnippetText.textContent = "Parsing document and waiting for pipeline...";
+    currentSnippetText.textContent = "Parsing document... This might take a while if a new model is loaded";
     connectSSE(job.stream_url);
 
   } catch (err) {
