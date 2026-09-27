@@ -10,7 +10,7 @@ const INFO_DATA = {
     title: "Server Base URL",
     icon: "fa-solid fa-server",
     content: `
-      <p>The HTTP address of your local or network OpenAI-compatible LLM server.</p>
+      <p>The HTTP address of any local or network server implementing the <a href="https://platform.openai.com/docs/api-reference/chat" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-medium hover:underline inline-flex items-center space-x-1"><span>OpenAI Chat Completions specification</span> <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>.</p>
       <p class="font-semibold text-slate-700 mt-2">Supported Presets & Defaults:</p>
       <ul class="list-disc pl-4 space-y-1">
         <li><code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">http://localhost:1234/v1</code> &mdash; LM Studio default</li>
