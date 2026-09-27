@@ -424,6 +424,8 @@ async function startProcessing() {
   if (statsSection) statsSection.classList.add("hidden");
   const errorBanner = document.getElementById("errorBanner");
   if (errorBanner) errorBanner.classList.add("hidden");
+  const snippetBox = document.getElementById("snippetBox");
+  if (snippetBox) snippetBox.classList.remove("hidden");
   progressCard.classList.remove("hidden");
   progressBar.style.width = "0%";
   progressBar.className = "bg-gradient-to-r from-indigo-500 to-violet-600 h-3 rounded-full transition-all duration-300";
@@ -521,9 +523,8 @@ function connectSSE(streamUrl) {
         progressStatus.textContent = "Completed";
         progressSpinner.className = "fa-solid fa-circle-check text-emerald-600";
         progressTitle.textContent = isSuggest ? "Suggestions Complete" : "Correction Complete";
-        currentSnippetText.textContent = isSuggest
-          ? "All suggestions saved as Track Changes. Ready for download."
-          : "All corrections applied with original formatting preserved.";
+        const snippetBox = document.getElementById("snippetBox");
+        if (snippetBox) snippetBox.classList.add("hidden");
         if (stopBtn) stopBtn.classList.add("hidden");
 
         // Display performance stats
