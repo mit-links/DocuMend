@@ -50,9 +50,8 @@ const INFO_DATA = {
     title: "Model Selection",
     icon: "fa-solid fa-microchip",
     content: `
-      <p>The specific Large Language Model used to correct spelling and grammar in your document.</p>
+      <p>The specific LLM used to correct spelling and grammar in your document.</p>
       <p class="mt-1">Click the <strong class="text-indigo-600">Connect & Fetch</strong> button to automatically discover all models currently loaded or available on your server.</p>
-      <p class="mt-2 text-slate-500">Recommended local models include: Gemma 4, Qwen 2.5 / 3, Llama 3.1, or Mistral.</p>
     `
   },
   fileUpload: {
@@ -80,7 +79,6 @@ const INFO_DATA = {
         <li><strong>2:</strong> Moderate balance between throughput and resource usage.</li>
         <li><strong>3&ndash;8+:</strong> Faster throughput if your hardware (VRAM/Compute) or cloud API can handle concurrent requests.</li>
       </ul>
-      <p class="mt-2 text-slate-500">Values less than 1 or non-integers will be rejected.</p>
     `
   },
   correctionMode: {
