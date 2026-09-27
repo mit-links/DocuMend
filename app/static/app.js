@@ -430,7 +430,7 @@ async function startProcessing() {
   progressPercent.textContent = "0%";
   progressCounter.textContent = "Uploading document...";
   progressStatus.textContent = "Uploading...";
-  currentSnippetText.textContent = "Preparing document pipeline...";
+  currentSnippetText.textContent = "Initializing... This can take a while if a new model is loaded";
   progressSpinner.className = "fa-solid fa-spinner fa-spin text-indigo-600";
   progressTitle.textContent = "Processing Document...";
 
@@ -534,12 +534,20 @@ function connectSSE(streamUrl) {
           const statTotalWords = document.getElementById("statTotalWords");
           const statTokCard = document.getElementById("statTokPerSecCard");
           const statTokensPerSec = document.getElementById("statTokensPerSec");
+          const statTotalDiffs = document.getElementById("statTotalDiffs");
+          const statDiffsLabel = document.getElementById("statDiffsLabel");
 
           if (statElapsedTime) statElapsedTime.textContent = `${stats.elapsed_seconds}s`;
           if (statWordsPerSec) statWordsPerSec.textContent = `${stats.words_per_second} w/s`;
-          if (statTotalWords) {
-            const extra = stats.revisions_count !== undefined ? ` (${stats.revisions_count} revisions)` : "";
-            statTotalWords.textContent = `${stats.total_words} words checked${extra}`;
+          if (statTotalWords) statTotalWords.textContent = `${stats.total_words} words checked`;
+
+          if (statTotalDiffs) {
+            const diffs = stats.total_diffs !== undefined ? stats.total_diffs : (stats.revisions_count || 0);
+            statTotalDiffs.textContent = diffs.toLocaleString();
+            if (statDiffsLabel) {
+              const unit = diffs === 1 ? "correction" : "corrections";
+              statDiffsLabel.textContent = isSuggest ? `${unit} suggested` : `${unit} applied`;
+            }
           }
 
           if (stats.tokens_per_second !== null && stats.tokens_per_second !== undefined) {

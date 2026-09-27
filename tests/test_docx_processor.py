@@ -57,6 +57,7 @@ async def test_docx_processor_extraction_and_replacement(tmp_path):
     assert stats["words_per_second"] >= 0
     assert stats["elapsed_seconds"] >= 0
     assert stats["total_items"] == len(progress_events)
+    assert stats["total_diffs"] > 0
 
     # Verify that the generated output docx can be parsed and has the corrected text
     output_doc = docx.Document(io.BytesIO(output_bytes))
@@ -166,6 +167,8 @@ async def test_docx_processor_suggest_mode(tmp_path):
     assert stats["mode"] == "suggest"
     assert "revisions_count" in stats
     assert stats["revisions_count"] > 0
+    assert "total_diffs" in stats
+    assert stats["total_diffs"] > 0
 
     # Verify that revisions (<w:ins> and <w:del>) exist in the output document
     output_doc = docx.Document(io.BytesIO(output_bytes))

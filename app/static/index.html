@@ -281,7 +281,14 @@
           </span>
           <span class="text-[11px] text-slate-400">Measured across full document</span>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <!-- Total Corrections / Diffs -->
+          <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-center">
+            <span class="text-[11px] font-medium text-slate-500 block">Corrections Made</span>
+            <span id="statTotalDiffs" class="text-base font-bold text-amber-600 mt-0.5 block">--</span>
+            <span id="statDiffsLabel" class="text-[10px] text-slate-400 block mt-0.5">edits applied</span>
+          </div>
+
           <!-- Elapsed Time -->
           <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-center">
             <span class="text-[11px] font-medium text-slate-500 block">Total Elapsed Time</span>

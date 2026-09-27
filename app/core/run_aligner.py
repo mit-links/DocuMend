@@ -6,6 +6,7 @@ is preserved even when text is modified by LLM corrections.
 
 from dataclasses import dataclass
 import difflib
+import re
 from typing import Any, Optional
 import docx.text.paragraph
 import docx.text.run
@@ -260,3 +261,31 @@ def update_paragraph_with_corrected_text(
             apply_run_style(run, style)
 
     return True
+
+
+# Regular expression splitting text into words, punctuation tokens, and whitespace spans
+_TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]+|\s+")
+
+
+def count_text_diffs(original_text: str, corrected_text: str) -> int:
+    """Counts word/phrase-level diff operations between original and corrected text.
+
+    Uses SequenceMatcher on tokenized word and punctuation chunks to count
+    distinct editing operations (replacements, insertions, deletions).
+
+    Args:
+        original_text: The initial text string before correction.
+        corrected_text: The text string after correction.
+
+    Returns:
+        The total number of non-equal diff operations (0 if identical).
+    """
+    if original_text == corrected_text:
+        return 0
+
+    orig_tokens = _TOKEN_PATTERN.findall(original_text)
+    corr_tokens = _TOKEN_PATTERN.findall(corrected_text)
+
+    matcher = difflib.SequenceMatcher(None, orig_tokens, corr_tokens)
+    return sum(1 for tag, *rest in matcher.get_opcodes() if tag != "equal")
+

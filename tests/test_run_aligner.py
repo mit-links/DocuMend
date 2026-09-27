@@ -2,6 +2,7 @@ import docx
 from app.core.run_aligner import (
     RunStyle,
     align_and_reconstruct_runs,
+    count_text_diffs,
     update_paragraph_with_corrected_text,
 )
 
@@ -52,3 +53,22 @@ def test_update_paragraph_in_place():
     bold_italic_runs = [r for r in p.runs if r.bold and r.italic]
     assert len(bold_italic_runs) > 0
     assert "important" in "".join(r.text for r in bold_italic_runs)
+
+
+def test_count_text_diffs():
+    # Identical
+    assert count_text_diffs("", "") == 0
+    assert count_text_diffs("Hello world", "Hello world") == 0
+
+    # Single replacement
+    assert count_text_diffs("This are a test", "This is a test") == 1
+
+    # Single insertion
+    assert count_text_diffs("Hello world", "Hello, world") == 1
+
+    # Single deletion
+    assert count_text_diffs("This is very great", "This is great") == 1
+
+    # Multiple diffs
+    assert count_text_diffs("The dogs jump high", "A dog jumps high") == 3
+

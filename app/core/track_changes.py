@@ -16,12 +16,14 @@ from docx.oxml.ns import qn
 import docx.text.paragraph
 import docx.text.run
 
-from app.core.run_aligner import RunStyle, apply_run_style, extract_run_style
+from app.core.run_aligner import (
+    _TOKEN_PATTERN,
+    RunStyle,
+    apply_run_style,
+    extract_run_style,
+)
 
 logger = logging.getLogger(__name__)
-
-# Regex pattern splitting text into words, punctuation tokens, and whitespace spans
-_TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]+|\s+")
 
 
 def _create_run_element(

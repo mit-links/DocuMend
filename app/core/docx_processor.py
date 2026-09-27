@@ -10,7 +10,7 @@ import docx
 import docx.text.paragraph
 
 from app.core.llm_client import LLMClient
-from app.core.run_aligner import update_paragraph_with_corrected_text
+from app.core.run_aligner import count_text_diffs, update_paragraph_with_corrected_text
 from app.core.track_changes import RevisionManager
 
 logger = logging.getLogger(__name__)
@@ -196,6 +196,7 @@ class DocxProcessor:
                 "tokens_per_second": None,
                 "total_completion_tokens": None,
                 "total_items": 0,
+                "total_diffs": 0,
                 "mode": mode,
             }
             if mode == "suggest":
@@ -210,24 +211,33 @@ class DocxProcessor:
         processed_count = 0
         total_completion_tokens = 0
         total_gen_time = 0.0
+        total_diffs = 0
 
         stop_processing_event = asyncio.Event()
 
         def is_cancelled() -> bool:
             return stop_processing_event.is_set() or bool(cancel_check and cancel_check())
 
-        def _apply_correction(p: docx.text.paragraph.Paragraph, corr_text: str) -> None:
+        def _apply_correction(
+            p: docx.text.paragraph.Paragraph,
+            corr_text: str,
+            orig_text: Optional[str] = None,
+        ) -> int:
+            if orig_text is None:
+                orig_text = p.text
+            diffs = count_text_diffs(orig_text, corr_text)
             if mode == "suggest" and revision_manager is not None:
                 revision_manager.apply_revisions_to_paragraph(p, corr_text)
             else:
                 update_paragraph_with_corrected_text(p, corr_text)
+            return diffs
 
         async def _execute_single_paragraph(p: docx.text.paragraph.Paragraph) -> None:
             """Executes paragraph correction directly without acquiring semaphore.
 
             Assumes caller manages concurrency semaphore.
             """
-            nonlocal processed_count, total_completion_tokens, total_gen_time
+            nonlocal processed_count, total_completion_tokens, total_gen_time, total_diffs
             if is_cancelled():
                 return
 
@@ -250,7 +260,7 @@ class DocxProcessor:
                     total_completion_tokens += tokens
                 total_gen_time += dur
 
-                _apply_correction(p, corrected_text)
+                total_diffs += _apply_correction(p, corrected_text, original_text)
                 processed_count += 1
                 if progress_callback:
                     progress_callback(
@@ -275,7 +285,7 @@ class DocxProcessor:
 
         async def process_batch(batch: list[DocumentElement]) -> None:
             """Processes a batch of DocumentElement items."""
-            nonlocal processed_count, total_completion_tokens, total_gen_time
+            nonlocal processed_count, total_completion_tokens, total_gen_time, total_diffs
             if is_cancelled():
                 return
 
@@ -311,7 +321,7 @@ class DocxProcessor:
 
                 if corrected_texts is not None and len(corrected_texts) == len(batch):
                     for elem, corr in zip(batch, corrected_texts):
-                        _apply_correction(elem.paragraph, corr)
+                        total_diffs += _apply_correction(elem.paragraph, corr, elem.original_text)
                         processed_count += 1
                         if progress_callback:
                             elem_snippet = (
@@ -365,13 +375,14 @@ class DocxProcessor:
                 total_completion_tokens if total_completion_tokens > 0 else None
             ),
             "total_items": total_count,
+            "total_diffs": total_diffs,
             "mode": mode,
         }
         if mode == "suggest" and revision_manager is not None:
             stats["revisions_count"] = revision_manager.revisions_count
 
         logger.info(
-            f"Document processing completed: {total_words} words checked in {elapsed_total:.2f}s "
+            f"Document processing completed: {total_words} words checked, {total_diffs} diff(s) in {elapsed_total:.2f}s "
             f"({words_per_sec} words/s"
             + (f", {tokens_per_sec} tok/s" if tokens_per_sec is not None else "")
             + ")."
